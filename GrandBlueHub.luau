@@ -137,56 +137,48 @@ local function IsTargetTrait(traitNames)
     return false
 end
 
-local function TrySkipRaceAnimation()
+local function SkipRaceAnimation()
     pcall(function()
         local gui = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization")
         if not gui then return end
-        local right = gui:FindFirstChild("Right", true)
-        if not right then return end
-        local race = right:FindFirstChild("Race", true)
+        local race = gui:FindFirstChild("Race", true)
         if not race then return end
         local spinner = race:FindFirstChild("Spinner", true)
         if not spinner then return end
         local frame = spinner:FindFirstChild("Frame", true)
         if not frame then return end
-        local mainFrame = frame:FindFirstChild("MainFrame", true)
-        if mainFrame and mainFrame.Visible then
-            local goal = mainFrame:GetAttribute("Goal")
+        local mf = frame:FindFirstChild("MainFrame", true)
+        if mf and mf.Visible then
+            local goal = mf:GetAttribute("Goal")
             if goal then
-                mainFrame.Position = goal
+                mf.Position = goal
             end
         end
     end)
 end
 
-local function TrySkipAllTraitAnimations()
+local function SkipTraitAnimation(slotNum)
     pcall(function()
         local gui = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization")
         if not gui then return end
-        local right = gui:FindFirstChild("Right", true)
-        if not right then return end
-        local traits = right:FindFirstChild("Traits", true)
+        local traits = gui:FindFirstChild("Traits", true)
         if not traits then return end
-        for i = 1, 3 do
-            local slot = traits:FindFirstChild("Slot " .. i)
-            if slot then
-                slot:SetAttribute("Skipped", true)
+        local slot = traits:FindFirstChild("Slot " .. slotNum)
+        if not slot then return end
+        slot:SetAttribute("Skipped", true)
+        local spinFrame = slot:FindFirstChild("SpinFrame", true)
+        if not spinFrame then return end
+        local bg = spinFrame:FindFirstChild("BackgroundFrame", true)
+        if not bg then return end
+        local mf = bg:FindFirstChild("MainFrame", true)
+        if mf and mf.Visible then
+            local goal = mf:GetAttribute("Goal")
+            if goal then
+                mf.Position = goal
             end
         end
     end)
 end
-
-local function ListenForRerollSkip()
-    RerollRemote.OnClientEvent:Connect(function(action, ...)
-        if action == "Race" then
-            task.defer(function() TrySkipRaceAnimation() end)
-        elseif action == "Trait" then
-            task.defer(function() TrySkipAllTraitAnimations() end)
-        end
-    end)
-end
-
-ListenForRerollSkip()
 
 -- ============================================
 -- TAB 1: AUTO RACE ROLL
@@ -211,7 +203,7 @@ RaceTab:CreateDropdown({
 
 RaceTab:CreateDropdown({
     name = "Target Variants",
-    description = "Only valid variants shown per race",
+    description = "Half Fish=Seafolk, Celestial=Skyfolk, Cat/Bunny=Beastfolk, Long Legged/Long Armed=Dwarf",
     multiSelect = true,
     options = {"Half Fish", "Celestial", "Cat", "Bunny", "Long Legged", "Long Armed"},
     callback = function(value) State.TargetVariants = value end,
@@ -240,7 +232,7 @@ local TraitTab = Window:CreateTab({ name = "Auto Trait Roll" })
 
 TraitTab:CreateText({
     name = "Trait Roll Settings",
-    text = "Select target traits/rarities and which slots to roll. All selected slots fire at once.",
+    text = "Slots roll one at a time with animation skipped automatically.",
 })
 
 TraitTab:CreateSection({ name = "Slots to Roll" })
@@ -339,15 +331,15 @@ task.spawn(function()
             local race, variant = GetRace()
             if race then
                 if IsTargetRace(race, variant) then
-                    RaceStatus:Append("Target reached: " .. race .. " " .. (variant or "Normal"))
+                    RaceStatus:Append("Target: " .. race .. " " .. (variant or "Normal"))
                     State.AutoRaceRoll = false
                     pcall(function() RaceToggle:Set(false) end)
                 else
                     RaceStatus:Append("Rolling... " .. race .. " " .. (variant or ""))
                     pcall(function() RerollRemote:FireServer("Race") end)
-                    task.wait(0.3)
-                    TrySkipRaceAnimation()
-                    task.wait(COOLDOWN - 0.3)
+                    task.wait(0.5)
+                    SkipRaceAnimation()
+                    task.wait(COOLDOWN - 0.5)
                 end
             else
                 RaceStatus:Append("Waiting for character data...")
@@ -358,26 +350,26 @@ task.spawn(function()
     end
 end)
 
--- Trait auto roll - fires all selected slots at once
+-- Trait auto roll - slots fire one at a time, animation skipped
 task.spawn(function()
     while true do
         if State.AutoTraitRoll and #State.TraitSlots > 0 then
             local traitNames = GetTraits()
             if IsTargetTrait(traitNames) then
-                TraitStatus:Append("Target trait found! Stopping.")
+                TraitStatus:Append("Target found! Stopping.")
                 State.AutoTraitRoll = false
                 pcall(function() TraitToggle:Set(false) end)
             else
-                TraitStatus:Append("Rolling slots: " .. table.concat(State.TraitSlots, ", "))
                 for _, slot in pairs(State.TraitSlots) do
                     local slotNum = tonumber(slot)
-                    if slotNum then
+                    if slotNum and State.AutoTraitRoll then
+                        TraitStatus:Append("Rolling slot " .. slot)
                         pcall(function() RerollRemote:FireServer("Trait", slotNum) end)
+                        task.wait(0.5)
+                        SkipTraitAnimation(slotNum)
+                        task.wait(COOLDOWN - 0.5)
                     end
                 end
-                task.wait(0.3)
-                TrySkipAllTraitAnimations()
-                task.wait(COOLDOWN - 0.3)
             end
         end
         task.wait(0.25)
