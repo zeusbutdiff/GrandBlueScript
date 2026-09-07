@@ -281,8 +281,8 @@ end
 local RaceTab = Window:CreateTab({ name = "Auto Race Roll" })
 
 RaceTab:CreateText({
-    name = "Race Roll Settings",
-    text = "Half Fish=Seafolk, Celestial=Skyfolk, Cat/Bunny=Beastfolk, Long Legged/Long Armed=Dwarf.",
+    name = "Race Roll Info",
+    text = "Human(74%): Normal, Half Fish, Long Armed, Long Legged, Celestial. Seafolk(15%), Skyfolk(5%), Beastfolk(4%): Cat, Bunny. Dwarf(2%).",
 })
 
 RaceTab:CreateSection({ name = "Target Selection" })
@@ -291,16 +291,43 @@ RaceTab:CreateDropdown({
     name = "Target Races",
     description = "Select races to stop on",
     multiSelect = true,
-    options = Races,
-    callback = function(value) State.TargetRaces = value end,
+    options = {
+        "Human (74%)",
+        "Seafolk (15%)",
+        "Skyfolk (5%)",
+        "Beastfolk (4%)",
+        "Dwarf (2%)",
+    },
+    callback = function(value)
+        local mapped = {}
+        for _, v in pairs(value) do
+            local name = v:match("^(.+) %(")
+            if name then table.insert(mapped, name) end
+        end
+        State.TargetRaces = mapped
+    end,
 })
 
 RaceTab:CreateDropdown({
     name = "Target Variants",
-    description = "Half Fish=Seafolk, Celestial=Skyfolk, Cat/Bunny=Beastfolk, Long Legged/Long Armed=Dwarf",
+    description = "Select variants to stop on. Each variant belongs to a specific race.",
     multiSelect = true,
-    options = {"Half Fish", "Celestial", "Cat", "Bunny", "Long Legged", "Long Armed"},
-    callback = function(value) State.TargetVariants = value end,
+    options = {
+        "Half Fish (Human - 1%)",
+        "Celestial (Human - 0.1%)",
+        "Long Armed (Human - 5%)",
+        "Long Legged (Human - 5%)",
+        "Cat (Beastfolk - 50%)",
+        "Bunny (Beastfolk - 50%)",
+    },
+    callback = function(value)
+        local mapped = {}
+        for _, v in pairs(value) do
+            local name = v:match("^(.+) %(")
+            if name then table.insert(mapped, name) end
+        end
+        State.TargetVariants = mapped
+    end,
 })
 
 RaceTab:CreateSection({ name = "Control" })
