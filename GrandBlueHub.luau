@@ -13,8 +13,9 @@ if not Events then warn("[GBH] Events not found!") return end
 
 local RerollRemote = Events:WaitForChild("Reroll", 10)
 local CodesRemote = Events:WaitForChild("Codes", 10)
+local GetDataRemote = Events:WaitForChild("GetData", 10)
 
-if not RerollRemote or not CodesRemote then
+if not RerollRemote or not CodesRemote or not GetDataRemote then
     warn("[GBH] Remotes not found!")
     return
 end
@@ -38,9 +39,20 @@ local Window = Rayfield:CreateWindow({
     },
 })
 
+-- ============================================
 -- DATA
+-- ============================================
+
 local Races = {"Human", "Seafolk", "Skyfolk", "Beastfolk", "Dwarf"}
-local RaceVariants = {"Normal", "Long Legged", "Long Armed", "Half Fish", "Celestial", "Cat", "Bunny"}
+
+local RaceVariantMap = {
+    Human = {},
+    Seafolk = {"Half Fish"},
+    Skyfolk = {"Celestial"},
+    Beastfolk = {"Cat", "Bunny"},
+    Dwarf = {"Long Legged", "Long Armed"},
+}
+
 local Traits = {
     "Will of the King", "Heavenly Restricted", "Limit-Breaker", "Man of Steel", "Beast Tamer",
     "Snake", "Swordsman's Shame", "Glass Cannon", "Pyromaniac",
@@ -56,7 +68,10 @@ local Codes = {
     "SorryForBreakingGame", "HappySunday", "TwitterGoalReached", "Release!"
 }
 
+-- ============================================
 -- STATE
+-- ============================================
+
 local State = {
     AutoRaceRoll = false,
     TargetRaces = {},
@@ -66,56 +81,70 @@ local State = {
     AutoTraitRoll = false,
     TargetTraits = {},
     TargetRarities = {},
-    TraitSlot = 1,
+    TraitSlots = {},
     TraitSkipAnimation = true,
     TraitDelay = 2,
 }
 
+-- ============================================
 -- HELPERS
-local function GetCharacter() return LocalPlayer.Character end
+-- ============================================
 
-local function GetRace()
-    local char = GetCharacter()
-    if char then
-        local obj = char:FindFirstChild("Race")
-        if obj then return obj.Value end
-    end
+local function GetCharacterData()
+    local ok, data = pcall(function()
+        return GetDataRemote:InvokeServer("Character")
+    end)
+    if ok then return data end
     return nil
 end
 
-local function GetRaceVariant()
-    local char = GetCharacter()
-    if char then
-        local obj = char:FindFirstChild("RaceVariant")
-        if obj then return obj.Value end
+local function GetRace()
+    local data = GetCharacterData()
+    if data and data.Race then
+        return data.Race.Species, data.Race.Variant
     end
-    return nil
+    return nil, nil
 end
 
 local function GetTraits()
-    local char = GetCharacter()
-    local traits = {}
-    if char then
-        local folder = char:FindFirstChild("Traits")
-        if folder then
-            for _, v in pairs(folder:GetChildren()) do
-                table.insert(traits, v.Name)
+    local data = GetCharacterData()
+    if data and data.Traits then
+        local traitNames = {}
+        for _, trait in pairs(data.Traits) do
+            if trait.Name then
+                table.insert(traitNames, trait.Name)
+            end
+        end
+        return traitNames
+    end
+    return {}
+end
+
+local function GetAvailableVariants()
+    local allVariants = {}
+    for _, race in pairs(State.TargetRaces) do
+        local variants = RaceVariantMap[race]
+        if variants then
+            for _, v in pairs(variants) do
+                if not table.find(allVariants, v) then
+                    table.insert(allVariants, v)
+                end
             end
         end
     end
-    return traits
+    return allVariants
 end
 
 local function IsTargetRace(race, variant)
     if #State.TargetRaces == 0 and #State.TargetVariants == 0 then return false end
     local raceMatch = #State.TargetRaces == 0
     local variantMatch = #State.TargetVariants == 0
-    if #State.TargetRaces > 0 then
+    if #State.TargetRaces > 0 and race then
         for _, t in pairs(State.TargetRaces) do
             if t == race then raceMatch = true; break end
         end
     end
-    if #State.TargetVariants > 0 then
+    if #State.TargetVariants > 0 and variant then
         for _, t in pairs(State.TargetVariants) do
             if t == variant then variantMatch = true; break end
         end
@@ -123,9 +152,9 @@ local function IsTargetRace(race, variant)
     return raceMatch and variantMatch
 end
 
-local function IsTargetTrait(traits)
+local function IsTargetTrait(traitNames)
     if #State.TargetTraits == 0 and #State.TargetRarities == 0 then return false end
-    for _, traitName in pairs(traits) do
+    for _, traitName in pairs(traitNames) do
         for _, target in pairs(State.TargetTraits) do
             if target == traitName then return true end
         end
@@ -141,7 +170,7 @@ local RaceTab = Window:CreateTab({ name = "Auto Race Roll" })
 
 RaceTab:CreateText({
     name = "Race Roll Settings",
-    text = "Configure your target race and variant, then enable auto roll.",
+    text = "Select target races first. Variants update based on your race selection.",
 })
 
 RaceTab:CreateToggle({
@@ -168,14 +197,25 @@ RaceTab:CreateDropdown({
     description = "Select races to stop on",
     multiSelect = true,
     options = Races,
-    callback = function(value) State.TargetRaces = value end,
+    callback = function(value)
+        State.TargetRaces = value
+        State.TargetVariants = {}
+        local availableVariants = GetAvailableVariants()
+        if VariantDropdown then
+            if #availableVariants > 0 then
+                VariantDropdown:Refresh(availableVariants)
+            else
+                VariantDropdown:Refresh({})
+            end
+        end
+    end,
 })
 
-RaceTab:CreateDropdown({
+local VariantDropdown = RaceTab:CreateDropdown({
     name = "Target Variants",
-    description = "Select variants to stop on",
+    description = "Select variants to stop on (updates based on race selection)",
     multiSelect = true,
-    options = RaceVariants,
+    options = {},
     callback = function(value) State.TargetVariants = value end,
 })
 
@@ -222,12 +262,14 @@ TraitTab:CreateSlider({
     callback = function(value) State.TraitDelay = value end,
 })
 
+TraitTab:CreateSection({ name = "Slots to Roll" })
+
 TraitTab:CreateDropdown({
-    name = "Slot to Roll",
-    description = "Which trait slot to reroll",
-    options = {"1", "2", "3", "4"},
-    value = "1",
-    callback = function(value) State.TraitSlot = tonumber(value) end,
+    name = "Trait Slots",
+    description = "Select which trait slots to roll (multiple allowed)",
+    multiSelect = true,
+    options = {"1", "2", "3"},
+    callback = function(value) State.TraitSlots = value end,
 })
 
 TraitTab:CreateSection({ name = "Target Selection" })
@@ -252,7 +294,7 @@ TraitTab:CreateSection({ name = "Control" })
 
 local TraitToggle = TraitTab:CreateToggle({
     name = "Enable Auto Trait Roll",
-    description = "Start auto rolling for your target traits",
+    description = "Start auto rolling selected slots",
     callback = function(value) State.AutoTraitRoll = value end,
 })
 
@@ -307,56 +349,51 @@ CodesTab:CreateText({
 -- AUTO ROLL LOOPS
 -- ============================================
 
+-- Race auto roll
 task.spawn(function()
     while true do
         if State.AutoRaceRoll then
-            local char = GetCharacter()
-            if char then
-                local race = GetRace()
-                local variant = GetRaceVariant()
+            local race, variant = GetRace()
+            if race then
                 if IsTargetRace(race, variant) then
-                    RaceStatus:Append("Target reached: " .. (race or "?") .. " " .. (variant or ""))
+                    RaceStatus:Append("Target reached: " .. race .. " " .. (variant or "Normal"))
                     State.AutoRaceRoll = false
                     pcall(function() RaceToggle:Set(false) end)
                 else
-                    RaceStatus:Append("Rolling... " .. (race or "None"))
+                    RaceStatus:Append("Rolling... Current: " .. race .. " " .. (variant or ""))
                     RerollRemote:FireServer("Race")
-                    if State.RaceSkipAnimation then
-                        task.wait(State.RaceDelay)
-                        pcall(function() RerollRemote:FireServer("RaceApply") end)
-                    else
-                        task.wait(5 + State.RaceDelay)
-                    end
+                    task.wait(State.RaceDelay)
                 end
             else
-                RaceStatus:Append("No character. Spawn first.")
+                RaceStatus:Append("Waiting for character data...")
             end
         end
         task.wait(0.5)
     end
 end)
 
+-- Trait auto roll - rolls all selected slots
 task.spawn(function()
     while true do
-        if State.AutoTraitRoll then
-            local char = GetCharacter()
-            if char then
-                local traits = GetTraits()
-                if IsTargetTrait(traits) then
+        if State.AutoTraitRoll and #State.TraitSlots > 0 then
+            local traitNames = GetTraits()
+            if #traitNames > 0 then
+                if IsTargetTrait(traitNames) then
                     TraitStatus:Append("Target trait found!")
                     State.AutoTraitRoll = false
                     pcall(function() TraitToggle:Set(false) end)
                 else
-                    TraitStatus:Append("Rolling slot " .. State.TraitSlot)
-                    RerollRemote:FireServer("Trait", State.TraitSlot)
-                    if State.TraitSkipAnimation then
-                        task.wait(State.TraitDelay)
-                    else
-                        task.wait(7 + State.TraitDelay)
+                    for _, slot in pairs(State.TraitSlots) do
+                        local slotNum = tonumber(slot)
+                        if slotNum then
+                            TraitStatus:Append("Rolling slot " .. slot)
+                            RerollRemote:FireServer("Trait", slotNum)
+                            task.wait(State.TraitDelay)
+                        end
                     end
                 end
             else
-                TraitStatus:Append("No character. Spawn first.")
+                TraitStatus:Append("Waiting for character data...")
             end
         end
         task.wait(0.5)
