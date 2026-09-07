@@ -131,6 +131,37 @@ local function GetTraits()
     return {}
 end
 
+local function GetSlotTraitName(slotNum)
+    local ok, traitData = pcall(function()
+        return GetDataRemote:InvokeServer("Traits")
+    end)
+    if ok and traitData then
+        local key = "Slot " .. slotNum
+        local traitName = traitData[key]
+        if traitName and traitName ~= false and traitName ~= "None" then
+            return traitName
+        end
+    end
+    return nil
+end
+
+local function IsTargetSingleTrait(traitName)
+    if not traitName then return false end
+    if #State.TargetTraits == 0 and #State.TargetRarities == 0 then return false end
+    for _, target in pairs(State.TargetTraits) do
+        if target == traitName then return true end
+    end
+    if #State.TargetRarities > 0 then
+        local rarity = TraitRarityMap[traitName]
+        if rarity then
+            for _, targetRarity in pairs(State.TargetRarities) do
+                if targetRarity == rarity then return true end
+            end
+        end
+    end
+    return false
+end
+
 local function IsTargetRace(race, variant)
     if #State.TargetRaces == 0 and #State.TargetVariants == 0 then return false end
     local raceMatch = #State.TargetRaces == 0
@@ -344,6 +375,18 @@ local TraitToggle = TraitTab:CreateToggle({
     callback = function(value) State.AutoTraitRoll = value end,
 })
 
+local SlotToggles = {
+    [1] = Slot1Toggle,
+    [2] = Slot2Toggle,
+    [3] = Slot3Toggle,
+}
+
+local SlotStateKeys = {
+    [1] = "RollSlot1",
+    [2] = "RollSlot2",
+    [3] = "RollSlot3",
+}
+
 local TraitStatus = TraitTab:CreateConsole({
     name = "Roll Status",
     height = 100,
@@ -422,31 +465,37 @@ task.spawn(function()
     end
 end)
 
--- Trait auto roll - fires one slot at a time with cooldown
+-- Trait auto roll - fires one slot at a time, stops each slot individually
 task.spawn(function()
     while true do
         if State.AutoTraitRoll then
-            local traitNames = GetTraits()
-            if IsTargetTrait(traitNames) then
-                TraitStatus:Append("Target found! Stopping.")
-                State.AutoTraitRoll = false
-                pcall(function() TraitToggle:Set(false) end)
-            else
-                local activeSlots = GetActiveSlots()
-                if #activeSlots > 0 then
-                    for _, slotNum in pairs(activeSlots) do
-                        if State.AutoTraitRoll then
-                            TraitStatus:Append("Rolling slot " .. slotNum)
-                            pcall(function() RerollRemote:FireServer("Trait", slotNum) end)
-                            task.spawn(function() SkipTraitAnimation(slotNum) end)
-                            task.wait(COOLDOWN)
+            local activeSlots = GetActiveSlots()
+            if #activeSlots > 0 then
+                for _, slotNum in pairs(activeSlots) do
+                    if State.AutoTraitRoll and State[SlotStateKeys[slotNum]] then
+                        TraitStatus:Append("Rolling slot " .. slotNum)
+                        pcall(function() RerollRemote:FireServer("Trait", slotNum) end)
+                        task.spawn(function() SkipTraitAnimation(slotNum) end)
+                        task.wait(COOLDOWN)
+
+                        local traitName = GetSlotTraitName(slotNum)
+                        if traitName and IsTargetSingleTrait(traitName) then
+                            TraitStatus:Append("Slot " .. slotNum .. " hit: " .. traitName .. " — stopping slot " .. slotNum)
+                            State[SlotStateKeys[slotNum]] = false
+                            pcall(function() SlotToggles[slotNum]:Set(false) end)
                         end
                     end
-                else
-                    TraitStatus:Append("No slots selected!")
+                end
+
+                if #GetActiveSlots() == 0 then
+                    TraitStatus:Append("All slots done!")
                     State.AutoTraitRoll = false
                     pcall(function() TraitToggle:Set(false) end)
                 end
+            else
+                TraitStatus:Append("No slots selected!")
+                State.AutoTraitRoll = false
+                pcall(function() TraitToggle:Set(false) end)
             end
         end
         task.wait(0.25)
