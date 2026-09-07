@@ -1,7 +1,8 @@
 --[[
-    Grand Blue Auto-Roll & Codes
+    Callie Hub - Grand Blue [Early Access]
     UI Library: Rayfield Gen2
-    Features: Auto Race Roll, Auto Trait Roll, Auto Redeem Codes
+    Features: Auto Race Roll, Auto Trait Roll, Auto Redeem Codes (Main Menu)
+              Auto Quest (In-Game)
     Animation skip via fast-tween override
 ]]
 
@@ -11,14 +12,14 @@ local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 local Events = ReplicatedStorage:WaitForChild("Events", 10)
-if not Events then warn("[GBH] Events not found!") return end
+if not Events then warn("[Callie Hub] Events not found!") return end
 
 local RerollRemote = Events:WaitForChild("Reroll", 10)
 local CodesRemote = Events:WaitForChild("Codes", 10)
 local GetDataRemote = Events:WaitForChild("GetData", 10)
 
 if not RerollRemote or not CodesRemote or not GetDataRemote then
-    warn("[GBH] Remotes not found!")
+    warn("[Callie Hub] Remotes not found!")
     return
 end
 
@@ -27,7 +28,7 @@ local success, Rayfield = pcall(function()
 end)
 
 if not success or not Rayfield then
-    warn("[GBH] Rayfield load failed:", Rayfield)
+    warn("[Callie Hub] Rayfield load failed:", Rayfield)
     return
 end
 
@@ -42,10 +43,14 @@ local Window = Rayfield:CreateWindow({
 })
 
 -- ============================================
--- DATA
+-- MODE DETECTION
 -- ============================================
 
-local Races = {"Human", "Seafolk", "Skyfolk", "Beastfolk", "Dwarf"}
+local inMainMenu = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization") ~= nil
+
+-- ============================================
+-- DATA
+-- ============================================
 
 local TraitRarities = {"Mythic", "Legendary", "Epic", "Rare", "Uncommon", "Common"}
 
@@ -98,7 +103,7 @@ local State = {
 }
 
 -- ============================================
--- HELPERS
+-- SHARED HELPERS
 -- ============================================
 
 local function GetCharacterData()
@@ -115,22 +120,6 @@ local function GetRace()
         return data.Race.Species, data.Race.Variant
     end
     return nil, nil
-end
-
-local function GetTraits()
-    local ok, traitData = pcall(function()
-        return GetDataRemote:InvokeServer("Traits")
-    end)
-    if ok and traitData then
-        local traitNames = {}
-        for _, traitName in pairs(traitData) do
-            if traitName and traitName ~= false and traitName ~= "None" then
-                table.insert(traitNames, traitName)
-            end
-        end
-        return traitNames
-    end
-    return {}
 end
 
 local function GetSlotTraitName(slotNum)
@@ -181,24 +170,6 @@ local function IsTargetRace(race, variant)
     return raceMatch and variantMatch
 end
 
-local function IsTargetTrait(traitNames)
-    if #State.TargetTraits == 0 and #State.TargetRarities == 0 then return false end
-    for _, traitName in pairs(traitNames) do
-        for _, target in pairs(State.TargetTraits) do
-            if target == traitName then return true end
-        end
-        if #State.TargetRarities > 0 then
-            local rarity = TraitRarityMap[traitName]
-            if rarity then
-                for _, targetRarity in pairs(State.TargetRarities) do
-                    if targetRarity == rarity then return true end
-                end
-            end
-        end
-    end
-    return false
-end
-
 local function GetActiveSlots()
     local slots = {}
     if State.RollSlot1 then table.insert(slots, 1) end
@@ -208,76 +179,81 @@ local function GetActiveSlots()
 end
 
 -- ============================================
--- ANIMATION SKIP
+-- ANIMATION SKIP (Main Menu only)
 -- ============================================
 
-local function SkipTraitAnimation(slotNum)
-    pcall(function()
-        local gui = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization")
-        if not gui then return end
-        local right = gui:FindFirstChild("Right", true)
-        if not right then return end
-        local traits = right:FindFirstChild("Traits", true)
-        if not traits then return end
-        local slot = traits:FindFirstChild("Slot " .. slotNum)
-        if not slot then return end
+if inMainMenu then
+    local function SkipTraitAnimation(slotNum)
+        pcall(function()
+            local gui = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization")
+            if not gui then return end
+            local right = gui:FindFirstChild("Right", true)
+            if not right then return end
+            local traits = right:FindFirstChild("Traits", true)
+            if not traits then return end
+            local slot = traits:FindFirstChild("Slot " .. slotNum)
+            if not slot then return end
 
-        local spinFrame = slot:FindFirstChild("SpinFrame", true)
-        if not spinFrame then return end
-        local bg = spinFrame:FindFirstChild("BackgroundFrame", true)
-        if not bg then return end
-        local mf = bg:FindFirstChild("MainFrame", true)
-        if not mf then return end
+            local spinFrame = slot:FindFirstChild("SpinFrame", true)
+            if not spinFrame then return end
+            local bg = spinFrame:FindFirstChild("BackgroundFrame", true)
+            if not bg then return end
+            local mf = bg:FindFirstChild("MainFrame", true)
+            if not mf then return end
 
-        for _ = 1, 10 do
-            task.wait(0.1)
-            if slot:GetAttribute("Spinning") == true then break end
-        end
-        if not slot:GetAttribute("Spinning") then return end
+            for _ = 1, 10 do
+                task.wait(0.1)
+                if slot:GetAttribute("Spinning") == true then break end
+            end
+            if not slot:GetAttribute("Spinning") then return end
 
-        local goal = mf:GetAttribute("Goal")
-        if not goal then return end
+            local goal = mf:GetAttribute("Goal")
+            if not goal then return end
 
-        slot:SetAttribute("Skipped", true)
-        local fastInfo = TweenInfo.new(0.25, Enum.EasingStyle.Circular, Enum.EasingDirection.Out)
-        local fastTween = TweenService:Create(mf, fastInfo, {Position = goal})
-        fastTween:Play()
-        task.wait(0.35)
-    end)
-end
+            slot:SetAttribute("Skipped", true)
+            local fastInfo = TweenInfo.new(0.25, Enum.EasingStyle.Circular, Enum.EasingDirection.Out)
+            local fastTween = TweenService:Create(mf, fastInfo, {Position = goal})
+            fastTween:Play()
+            task.wait(0.35)
+        end)
+    end
 
-local function SkipRaceAnimation()
-    pcall(function()
-        local gui = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization")
-        if not gui then return end
-        local right = gui:FindFirstChild("Right", true)
-        if not right then return end
-        local race = right:FindFirstChild("Race", true)
-        if not race then return end
-        local spinner = race:FindFirstChild("Spinner", true)
-        if not spinner then return end
-        local bg = spinner:FindFirstChild("Frame", true)
-        if not bg then return end
-        bg = bg:FindFirstChild("BackgroundFrame", true)
-        if not bg then return end
-        local mf = bg:FindFirstChild("MainFrame", true)
-        if not mf then return end
+    local function SkipRaceAnimation()
+        pcall(function()
+            local gui = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization")
+            if not gui then return end
+            local right = gui:FindFirstChild("Right", true)
+            if not right then return end
+            local race = right:FindFirstChild("Race", true)
+            if not race then return end
+            local spinner = race:FindFirstChild("Spinner", true)
+            if not spinner then return end
+            local bg = spinner:FindFirstChild("Frame", true)
+            if not bg then return end
+            bg = bg:FindFirstChild("BackgroundFrame", true)
+            if not bg then return end
+            local mf = bg:FindFirstChild("MainFrame", true)
+            if not mf then return end
 
-        for _ = 1, 10 do
-            task.wait(0.1)
-            if mf.Visible then break end
-        end
-        if not mf.Visible then return end
+            for _ = 1, 10 do
+                task.wait(0.1)
+                if mf.Visible then break end
+            end
+            if not mf.Visible then return end
 
-        local fastInfo = TweenInfo.new(0.25, Enum.EasingStyle.Circular, Enum.EasingDirection.Out)
-        local fastTween = TweenService:Create(mf, fastInfo, {Position = UDim2.new(0.5, 0, -2, 0)})
-        fastTween:Play()
-        task.wait(0.35)
-    end)
+            local fastInfo = TweenInfo.new(0.25, Enum.EasingStyle.Circular, Enum.EasingDirection.Out)
+            local fastTween = TweenService:Create(mf, fastInfo, {Position = UDim2.new(0.5, 0, -2, 0)})
+            fastTween:Play()
+            task.wait(0.35)
+        end)
+    end
+
+    _G.SkipTraitAnimation = SkipTraitAnimation
+    _G.SkipRaceAnimation = SkipRaceAnimation
 end
 
 -- ============================================
--- AUTO QUEST HELPERS
+-- IN-GAME HELPERS (Auto Quest)
 -- ============================================
 
 local VK_F = 0x46
@@ -517,356 +493,358 @@ local function DoQuestAction(condition)
 end
 
 -- ============================================
--- TAB 1: AUTO RACE ROLL
+-- BUILD UI BASED ON MODE
 -- ============================================
 
-local RaceTab = Window:CreateTab({ name = "Auto Race Roll" })
+if inMainMenu then
+    -- ============================================
+    -- MAIN MENU: Race Roll, Trait Roll, Codes
+    -- ============================================
 
-RaceTab:CreateText({
-    name = "Race Roll Info",
-    text = "Human(74%): Normal, Half Fish, Long Armed, Long Legged, Celestial. Seafolk(15%), Skyfolk(5%), Beastfolk(4%): Cat, Bunny. Dwarf(2%).",
-})
+    local COOLDOWN = 5.5
 
-RaceTab:CreateSection({ name = "Target Selection" })
+    -- Tab 1: Auto Race Roll
+    local RaceTab = Window:CreateTab({ name = "Auto Race Roll" })
 
-RaceTab:CreateDropdown({
-    name = "Target Races",
-    description = "Select races to stop on",
-    multiSelect = true,
-    options = {
-        "Human (74%)",
-        "Seafolk (15%)",
-        "Skyfolk (5%)",
-        "Beastfolk (4%)",
-        "Dwarf (2%)",
-    },
-    callback = function(value)
-        local mapped = {}
-        for _, v in pairs(value) do
-            local name = v:match("^(.+) %(")
-            if name then table.insert(mapped, name) end
-        end
-        State.TargetRaces = mapped
-    end,
-})
+    RaceTab:CreateText({
+        name = "Race Roll Info",
+        text = "Human(74%): Normal, Half Fish, Long Armed, Long Legged, Celestial. Seafolk(15%), Skyfolk(5%), Beastfolk(4%): Cat, Bunny. Dwarf(2%).",
+    })
 
-RaceTab:CreateDropdown({
-    name = "Target Variants",
-    description = "Select variants to stop on. Each variant belongs to a specific race.",
-    multiSelect = true,
-    options = {
-        "Half Fish (Human - 1%)",
-        "Celestial (Human - 0.1%)",
-        "Long Armed (Human - 5%)",
-        "Long Legged (Human - 5%)",
-        "Cat (Beastfolk - 50%)",
-        "Bunny (Beastfolk - 50%)",
-    },
-    callback = function(value)
-        local mapped = {}
-        for _, v in pairs(value) do
-            local name = v:match("^(.+) %(")
-            if name then table.insert(mapped, name) end
-        end
-        State.TargetVariants = mapped
-    end,
-})
+    RaceTab:CreateSection({ name = "Target Selection" })
 
-RaceTab:CreateSection({ name = "Control" })
-
-local RaceToggle = RaceTab:CreateToggle({
-    name = "Enable Auto Race Roll",
-    description = "Start auto rolling for your target race/variant",
-    callback = function(value) State.AutoRaceRoll = value end,
-})
-
--- ============================================
--- TAB 2: AUTO TRAIT ROLL
--- ============================================
-
-local TraitTab = Window:CreateTab({ name = "Auto Trait Roll" })
-
-TraitTab:CreateText({
-    name = "Trait Roll Settings",
-    text = "Enable the slots you want to roll. Each slot rolls with 5s cooldown.",
-})
-
-TraitTab:CreateSection({ name = "Slots to Roll" })
-
-local Slot1Toggle = TraitTab:CreateToggle({
-    name = "Roll Slot 1",
-    description = "Include slot 1 in auto roll",
-    callback = function(value) State.RollSlot1 = value end,
-})
-
-local Slot2Toggle = TraitTab:CreateToggle({
-    name = "Roll Slot 2",
-    description = "Include slot 2 in auto roll",
-    callback = function(value) State.RollSlot2 = value end,
-})
-
-local Slot3Toggle = TraitTab:CreateToggle({
-    name = "Roll Slot 3",
-    description = "Include slot 3 in auto roll",
-    callback = function(value) State.RollSlot3 = value end,
-})
-
-TraitTab:CreateSection({ name = "Target Selection" })
-
-TraitTab:CreateDropdown({
-    name = "Target Traits",
-    description = "Select specific traits to stop on",
-    multiSelect = true,
-    options = TraitNames,
-    callback = function(value) State.TargetTraits = value end,
-})
-
-TraitTab:CreateDropdown({
-    name = "Target Rarities",
-    description = "Stop on any trait of these rarities",
-    multiSelect = true,
-    options = TraitRarities,
-    callback = function(value) State.TargetRarities = value end,
-})
-
-TraitTab:CreateSection({ name = "Control" })
-
-local TraitToggle = TraitTab:CreateToggle({
-    name = "Enable Auto Trait Roll",
-    description = "Start auto rolling selected slots",
-    callback = function(value) State.AutoTraitRoll = value end,
-})
-
-local SlotToggles = {
-    [1] = Slot1Toggle,
-    [2] = Slot2Toggle,
-    [3] = Slot3Toggle,
-}
-
-local SlotStateKeys = {
-    [1] = "RollSlot1",
-    [2] = "RollSlot2",
-    [3] = "RollSlot3",
-}
-
--- ============================================
--- TAB 3: AUTO CODES
--- ============================================
-
-local CodesTab = Window:CreateTab({ name = "Auto Codes" })
-
-CodesTab:CreateText({
-    name = "Code Redemption",
-    text = "Click the button below to redeem all 12 known codes.",
-})
-
-local CodesStatus = CodesTab:CreateConsole({
-    name = "Redemption Status",
-    height = 150,
-    follow = true,
-    maxLines = 50,
-})
-
-CodesTab:CreateButton({
-    name = "Redeem All Codes",
-    description = "Redeem all known codes now",
-    callback = function()
-        task.spawn(function()
-            CodesStatus:Clear()
-            CodesStatus:Append("Starting code redemption...")
-            for _, code in pairs(Codes) do
-                pcall(function() CodesRemote:FireServer(code) end)
-                CodesStatus:Append("Redeemed: " .. code)
-                task.wait(1.5)
+    RaceTab:CreateDropdown({
+        name = "Target Races",
+        description = "Select races to stop on",
+        multiSelect = true,
+        options = {
+            "Human (74%)",
+            "Seafolk (15%)",
+            "Skyfolk (5%)",
+            "Beastfolk (4%)",
+            "Dwarf (2%)",
+        },
+        callback = function(value)
+            local mapped = {}
+            for _, v in pairs(value) do
+                local name = v:match("^(.+) %(")
+                if name then table.insert(mapped, name) end
             end
-            CodesStatus:Append("Done! All codes redeemed.")
-        end)
-    end,
-})
+            State.TargetRaces = mapped
+        end,
+    })
 
-CodesTab:CreateText({
-    name = "Available Codes",
-    text = table.concat(Codes, ", "),
-})
+    RaceTab:CreateDropdown({
+        name = "Target Variants",
+        description = "Select variants to stop on. Each variant belongs to a specific race.",
+        multiSelect = true,
+        options = {
+            "Half Fish (Human - 1%)",
+            "Celestial (Human - 0.1%)",
+            "Long Armed (Human - 5%)",
+            "Long Legged (Human - 5%)",
+            "Cat (Beastfolk - 50%)",
+            "Bunny (Beastfolk - 50%)",
+        },
+        callback = function(value)
+            local mapped = {}
+            for _, v in pairs(value) do
+                local name = v:match("^(.+) %(")
+                if name then table.insert(mapped, name) end
+            end
+            State.TargetVariants = mapped
+        end,
+    })
 
--- ============================================
--- TAB 4: AUTO QUEST
--- ============================================
+    RaceTab:CreateSection({ name = "Control" })
 
-local QuestTab = Window:CreateTab({ name = "Auto Quest" })
+    local RaceToggle = RaceTab:CreateToggle({
+        name = "Enable Auto Race Roll",
+        description = "Start auto rolling for your target race/variant",
+        callback = function(value) State.AutoRaceRoll = value end,
+    })
 
-QuestTab:CreateText({
-    name = "Auto Quest Info",
-    text = "Automatically progresses through the Officer Graves quest chain and beyond. Handles Talk, Block, Dash, Hit, Cast, and Open objectives.",
-})
+    -- Tab 2: Auto Trait Roll
+    local TraitTab = Window:CreateTab({ name = "Auto Trait Roll" })
 
-QuestTab:CreateSection({ name = "Not Automatable" })
+    TraitTab:CreateText({
+        name = "Trait Roll Settings",
+        text = "Enable the slots you want to roll. Each slot rolls with 5s cooldown.",
+    })
 
-QuestTab:CreateText({
-    name = "Limitations",
-    text = "Invest Stat Points (server checks unspent points), Level Gates (some quests require min level), Purchase/Smelt/Upgrade (need station proximity), Steal/CashOut (complex interactions), EquipSkill (inventory UI varies per quest), Cast (hotbar UI varies), Shoot (aim-dependent).",
-})
+    TraitTab:CreateSection({ name = "Slots to Roll" })
 
-QuestTab:CreateSection({ name = "Control" })
+    local Slot1Toggle = TraitTab:CreateToggle({
+        name = "Roll Slot 1",
+        description = "Include slot 1 in auto roll",
+        callback = function(value) State.RollSlot1 = value end,
+    })
 
-local QuestStatusText = QuestTab:CreateText({
-    name = "Status",
-    text = "Idle",
-})
+    local Slot2Toggle = TraitTab:CreateToggle({
+        name = "Roll Slot 2",
+        description = "Include slot 2 in auto roll",
+        callback = function(value) State.RollSlot2 = value end,
+    })
 
-local QuestToggle = QuestTab:CreateToggle({
-    name = "Enable Auto Quest",
-    description = "Automatically progress through quest objectives",
-    callback = function(value)
-        State.AutoQuest = value
-        if value then
-            State.QuestStatus = "Starting..."
-        else
-            State.QuestStatus = "Idle"
-        end
-    end,
-})
+    local Slot3Toggle = TraitTab:CreateToggle({
+        name = "Roll Slot 3",
+        description = "Include slot 3 in auto roll",
+        callback = function(value) State.RollSlot3 = value end,
+    })
 
-QuestTab:CreateButton({
-    name = "Force Block (Test)",
-    description = "Hold F to block once",
-    callback = function()
-        task.spawn(function()
-            DoBlock()
-        end)
-    end,
-})
+    TraitTab:CreateSection({ name = "Target Selection" })
 
-QuestTab:CreateButton({
-    name = "Force Talk to Graves (Test)",
-    description = "Teleport to Officer Graves and start dialogue",
-    callback = function()
-        task.spawn(function()
-            DoTalk("Officer Graves")
-        end)
-    end,
-})
+    TraitTab:CreateDropdown({
+        name = "Target Traits",
+        description = "Select specific traits to stop on",
+        multiSelect = true,
+        options = TraitNames,
+        callback = function(value) State.TargetTraits = value end,
+    })
 
--- ============================================
--- AUTO ROLL LOOPS
--- ============================================
+    TraitTab:CreateDropdown({
+        name = "Target Rarities",
+        description = "Stop on any trait of these rarities",
+        multiSelect = true,
+        options = TraitRarities,
+        callback = function(value) State.TargetRarities = value end,
+    })
 
-local COOLDOWN = 5.5
+    TraitTab:CreateSection({ name = "Control" })
 
--- Race auto roll
-task.spawn(function()
-    while true do
-        if State.AutoRaceRoll then
-            local race, variant = GetRace()
-            if race then
-                if IsTargetRace(race, variant) then
-                    State.AutoRaceRoll = false
-                    pcall(function() RaceToggle:Set(false) end)
-                else
-                    pcall(function() RerollRemote:FireServer("Race") end)
-                    task.spawn(function() SkipRaceAnimation() end)
-                    task.wait(COOLDOWN)
+    local TraitToggle = TraitTab:CreateToggle({
+        name = "Enable Auto Trait Roll",
+        description = "Start auto rolling selected slots",
+        callback = function(value) State.AutoTraitRoll = value end,
+    })
+
+    local SlotToggles = {
+        [1] = Slot1Toggle,
+        [2] = Slot2Toggle,
+        [3] = Slot3Toggle,
+    }
+
+    local SlotStateKeys = {
+        [1] = "RollSlot1",
+        [2] = "RollSlot2",
+        [3] = "RollSlot3",
+    }
+
+    -- Tab 3: Auto Codes
+    local CodesTab = Window:CreateTab({ name = "Auto Codes" })
+
+    CodesTab:CreateText({
+        name = "Code Redemption",
+        text = "Click the button below to redeem all 12 known codes.",
+    })
+
+    local CodesStatus = CodesTab:CreateConsole({
+        name = "Redemption Status",
+        height = 150,
+        follow = true,
+        maxLines = 50,
+    })
+
+    CodesTab:CreateButton({
+        name = "Redeem All Codes",
+        description = "Redeem all known codes now",
+        callback = function()
+            task.spawn(function()
+                CodesStatus:Clear()
+                CodesStatus:Append("Starting code redemption...")
+                for _, code in pairs(Codes) do
+                    pcall(function() CodesRemote:FireServer(code) end)
+                    CodesStatus:Append("Redeemed: " .. code)
+                    task.wait(1.5)
                 end
-            else
-                task.wait(2)
-            end
-        end
-        task.wait(0.25)
-    end
-end)
+                CodesStatus:Append("Done! All codes redeemed.")
+            end)
+        end,
+    })
 
--- Trait auto roll - fires all active slots at once, server queues them
-task.spawn(function()
-    while true do
-        if State.AutoTraitRoll then
-            local activeSlots = GetActiveSlots()
-            if #activeSlots > 0 then
-                local fired = {}
-                for _, slotNum in pairs(activeSlots) do
-                    if State.AutoTraitRoll and State[SlotStateKeys[slotNum]] then
-                        pcall(function() RerollRemote:FireServer("Trait", slotNum) end)
-                        task.spawn(function() SkipTraitAnimation(slotNum) end)
-                        table.insert(fired, slotNum)
-                        task.wait(0.5)
+    CodesTab:CreateText({
+        name = "Available Codes",
+        text = table.concat(Codes, ", "),
+    })
+
+    -- ============================================
+    -- MAIN MENU LOOPS
+    -- ============================================
+
+    -- Race auto roll
+    task.spawn(function()
+        while true do
+            if State.AutoRaceRoll then
+                local race, variant = GetRace()
+                if race then
+                    if IsTargetRace(race, variant) then
+                        State.AutoRaceRoll = false
+                        pcall(function() RaceToggle:Set(false) end)
+                    else
+                        pcall(function() RerollRemote:FireServer("Race") end)
+                        task.spawn(function() _G.SkipRaceAnimation() end)
+                        task.wait(COOLDOWN)
                     end
+                else
+                    task.wait(2)
                 end
+            end
+            task.wait(0.25)
+        end
+    end)
 
-                if #fired > 0 then
-                    task.wait(COOLDOWN - 0.5)
-                end
-
-                for _, slotNum in pairs(fired) do
-                    if State.AutoTraitRoll and State[SlotStateKeys[slotNum]] then
-                        local traitName = GetSlotTraitName(slotNum)
-                        if traitName and IsTargetSingleTrait(traitName) then
-                            State[SlotStateKeys[slotNum]] = false
-                            pcall(function() SlotToggles[slotNum]:Set(false) end)
+    -- Trait auto roll
+    task.spawn(function()
+        while true do
+            if State.AutoTraitRoll then
+                local activeSlots = GetActiveSlots()
+                if #activeSlots > 0 then
+                    local fired = {}
+                    for _, slotNum in pairs(activeSlots) do
+                        if State.AutoTraitRoll and State[SlotStateKeys[slotNum]] then
+                            pcall(function() RerollRemote:FireServer("Trait", slotNum) end)
+                            task.spawn(function() _G.SkipTraitAnimation(slotNum) end)
+                            table.insert(fired, slotNum)
+                            task.wait(0.5)
                         end
                     end
-                end
 
-                if #GetActiveSlots() == 0 then
-                    State.AutoTraitRoll = false
-                    pcall(function() TraitToggle:Set(false) end)
-                end
-            else
-                State.AutoTraitRoll = false
-                pcall(function() TraitToggle:Set(false) end)
-            end
-        end
-        task.wait(0.25)
-    end
-end)
+                    if #fired > 0 then
+                        task.wait(COOLDOWN - 0.5)
+                    end
 
--- ============================================
--- AUTO QUEST LOOP
--- ============================================
-
-task.spawn(function()
-    while true do
-        if State.AutoQuest then
-            local quest = GetActiveQuest()
-            if not quest then
-                State.QuestStatus = "No active quest"
-                if QuestStatusText then pcall(function() QuestStatusText:Set("No active quest") end) end
-                task.wait(2)
-            else
-                local stageIndex, stage = GetCurrentStage(quest)
-                if not stageIndex then
-                    State.QuestStatus = "Quest complete: " .. (quest.Title or "Unknown")
-                    if QuestStatusText then pcall(function() QuestStatusText:Set(State.QuestStatus) end) end
-                    task.wait(2)
-                else
-                    local stageTitle = stage.Title or "Unknown"
-                    State.QuestStatus = string.format("%s [%d/%d] %s", quest.Title or "?", stageIndex, #quest.Stages, stageTitle)
-                    if QuestStatusText then pcall(function() QuestStatusText:Set(State.QuestStatus) end) end
-
-                    local allComplete = true
-                    for _, cond in ipairs(stage.Conditions or {}) do
-                        if not cond.Complete then
-                            allComplete = false
-                            local acted = DoQuestAction(cond)
-                            if acted then
-                                task.wait(2)
-                            else
-                                State.QuestStatus = "Blocked: " .. (cond.Type or "?") .. " - " .. (cond.Target and cond.Target.Name or "?")
-                                if QuestStatusText then pcall(function() QuestStatusText:Set(State.QuestStatus) end) end
-                                task.wait(5)
+                    for _, slotNum in pairs(fired) do
+                        if State.AutoTraitRoll and State[SlotStateKeys[slotNum]] then
+                            local traitName = GetSlotTraitName(slotNum)
+                            if traitName and IsTargetSingleTrait(traitName) then
+                                State[SlotStateKeys[slotNum]] = false
+                                pcall(function() SlotToggles[slotNum]:Set(false) end)
                             end
                         end
                     end
 
-                    if allComplete then
-                        task.wait(1)
+                    if #GetActiveSlots() == 0 then
+                        State.AutoTraitRoll = false
+                        pcall(function() TraitToggle:Set(false) end)
                     end
+                else
+                    State.AutoTraitRoll = false
+                    pcall(function() TraitToggle:Set(false) end)
                 end
             end
-        else
-            State.QuestStatus = "Idle"
-            if QuestStatusText then pcall(function() QuestStatusText:Set("Idle") end) end
+            task.wait(0.25)
         end
-        task.wait(0.5)
-    end
-end)
+    end)
+
+else
+    -- ============================================
+    -- IN-GAME: Auto Quest
+    -- ============================================
+
+    local QuestTab = Window:CreateTab({ name = "Auto Quest" })
+
+    QuestTab:CreateText({
+        name = "Auto Quest Info",
+        text = "Automatically progresses through the Officer Graves quest chain and beyond. Handles Talk, Block, Dash, Hit, Cast, and Open objectives.",
+    })
+
+    QuestTab:CreateSection({ name = "Not Automatable" })
+
+    QuestTab:CreateText({
+        name = "Limitations",
+        text = "Invest Stat Points (server checks unspent points), Level Gates (some quests require min level), Purchase/Smelt/Upgrade (need station proximity), Steal/CashOut (complex interactions).",
+    })
+
+    QuestTab:CreateSection({ name = "Control" })
+
+    local QuestStatusText = QuestTab:CreateText({
+        name = "Status",
+        text = "Idle",
+    })
+
+    local QuestToggle = QuestTab:CreateToggle({
+        name = "Enable Auto Quest",
+        description = "Automatically progress through quest objectives",
+        callback = function(value)
+            State.AutoQuest = value
+            if value then
+                State.QuestStatus = "Starting..."
+            else
+                State.QuestStatus = "Idle"
+            end
+        end,
+    })
+
+    QuestTab:CreateButton({
+        name = "Force Block (Test)",
+        description = "Hold F to block once",
+        callback = function()
+            task.spawn(function()
+                DoBlock()
+            end)
+        end,
+    })
+
+    QuestTab:CreateButton({
+        name = "Force Talk to Graves (Test)",
+        description = "Teleport to Officer Graves and start dialogue",
+        callback = function()
+            task.spawn(function()
+                DoTalk("Officer Graves")
+            end)
+        end,
+    })
+
+    -- ============================================
+    -- IN-GAME LOOP: Auto Quest
+    -- ============================================
+
+    task.spawn(function()
+        while true do
+            if State.AutoQuest then
+                local quest = GetActiveQuest()
+                if not quest then
+                    State.QuestStatus = "No active quest"
+                    if QuestStatusText then pcall(function() QuestStatusText:Set("No active quest") end) end
+                    task.wait(2)
+                else
+                    local stageIndex, stage = GetCurrentStage(quest)
+                    if not stageIndex then
+                        State.QuestStatus = "Quest complete: " .. (quest.Title or "Unknown")
+                        if QuestStatusText then pcall(function() QuestStatusText:Set(State.QuestStatus) end) end
+                        task.wait(2)
+                    else
+                        local stageTitle = stage.Title or "Stage " .. stageIndex
+                        State.QuestStatus = string.format("%s [%d/%d] %s", quest.Title or "?", stageIndex, #quest.Stages, stageTitle)
+                        if QuestStatusText then pcall(function() QuestStatusText:Set(State.QuestStatus) end) end
+
+                        local allComplete = true
+                        for _, cond in ipairs(stage.Conditions or {}) do
+                            if not cond.Complete then
+                                allComplete = false
+                                local acted = DoQuestAction(cond)
+                                if acted then
+                                    task.wait(2)
+                                else
+                                    State.QuestStatus = "Blocked: " .. (cond.Type or "?") .. " - " .. (cond.Target and cond.Target.Name or "?")
+                                    if QuestStatusText then pcall(function() QuestStatusText:Set(State.QuestStatus) end) end
+                                    task.wait(5)
+                                end
+                            end
+                        end
+
+                        if allComplete then
+                            task.wait(1)
+                        end
+                    end
+                end
+            else
+                State.QuestStatus = "Idle"
+                if QuestStatusText then pcall(function() QuestStatusText:Set("Idle") end) end
+            end
+            task.wait(0.5)
+        end
+    end)
+end
 
 pcall(function() Window:Load() end)
