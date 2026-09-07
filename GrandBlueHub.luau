@@ -46,7 +46,8 @@ local Window = Rayfield:CreateWindow({
 -- MODE DETECTION
 -- ============================================
 
-local inMainMenu = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization") ~= nil
+local characterCustomGui = LocalPlayer.PlayerGui:WaitForChild("CharacterCustomization", 5)
+local inMainMenu = characterCustomGui ~= nil
 
 -- ============================================
 -- DATA
