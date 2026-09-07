@@ -93,6 +93,8 @@ local State = {
     RollSlot1 = false,
     RollSlot2 = false,
     RollSlot3 = false,
+    AutoQuest = false,
+    QuestStatus = "Idle",
 }
 
 -- ============================================
@@ -275,6 +277,246 @@ local function SkipRaceAnimation()
 end
 
 -- ============================================
+-- AUTO QUEST HELPERS
+-- ============================================
+
+local VK_F = 0x46
+local VK_Q = 0x51
+local VK_L = 0x4C
+
+local ClientCache = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("ClientCache"))
+
+local function FindNPC(npcName)
+    local ok, result = pcall(function()
+        local folder = workspace:FindFirstChild("AA IMPORTANT")
+        if not folder then return nil end
+        local npcs = folder:FindFirstChild("DialogueNPCs")
+        if not npcs then return nil end
+        for _, zone in pairs(npcs:GetChildren()) do
+            for _, npc in pairs(zone:GetChildren()) do
+                if npc.Name == npcName then
+                    return npc
+                end
+            end
+        end
+        return nil
+    end)
+    return ok and result or nil
+end
+
+local function TeleportToNPC(npcName)
+    local npc = FindNPC(npcName)
+    if not npc then return false end
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local npcHRP = npc:FindFirstChild("HumanoidRootPart")
+    if not hrp or not npcHRP then return false end
+    local offset = npcHRP.CFrame.LookVector * 5
+    hrp.CFrame = CFrame.new(npcHRP.Position + offset, npcHRP.Position)
+    return true
+end
+
+local function WaitForDialogue(timeout)
+    timeout = timeout or 10
+    local gui = LocalPlayer.PlayerGui:FindFirstChild("DialogueUI")
+    if not gui then return false end
+    local t = tick()
+    while not gui.Enabled and (tick() - t) < timeout do
+        task.wait(0.2)
+    end
+    return gui.Enabled
+end
+
+local function ClickGuiButton(button)
+    if not button then return false end
+    local ok = pcall(function()
+        local pos = button.AbsolutePosition
+        local size = button.AbsoluteSize
+        local x = pos.X + size.X / 2
+        local y = pos.Y + size.Y / 2
+        mousemoveabs(x, y)
+        task.wait(0.1)
+        mouse1click()
+    end)
+    return ok
+end
+
+local function ClickThroughDialogue()
+    local gui = LocalPlayer.PlayerGui:FindFirstChild("DialogueUI")
+    if not gui then return end
+    local main = gui:FindFirstChild("Main")
+    if not main then return end
+    for _ = 1, 20 do
+        if not gui.Enabled then break end
+        local clicked = false
+        for _, child in pairs(main:GetChildren()) do
+            if child:IsA("Frame") and child.Visible then
+                local btn = child:FindFirstChild("ImageButton")
+                if btn and btn.Visible then
+                    ClickGuiButton(btn)
+                    clicked = true
+                    task.wait(0.5)
+                    break
+                end
+            end
+        end
+        if not clicked then break end
+    end
+end
+
+local function AcceptQuest()
+    local gui = LocalPlayer.PlayerGui:FindFirstChild("DialogueUI")
+    if not gui then return false end
+    local main = gui:FindFirstChild("Main")
+    if not main then return false end
+    for _, child in pairs(main:GetChildren()) do
+        if child:IsA("Frame") and child.Name == "Accept" and child.Visible then
+            local btn = child:FindFirstChild("ImageButton")
+            if btn then
+                ClickGuiButton(btn)
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function DoBlock()
+    pcall(function() keypress(VK_F) end)
+    task.wait(1.5)
+    pcall(function() keyrelease(VK_F) end)
+end
+
+local function DoDash(amount)
+    for _ = 1, amount do
+        pcall(function() keypress(VK_Q) end)
+        task.wait(0.1)
+        pcall(function() keyrelease(VK_Q) end)
+        task.wait(0.5)
+    end
+end
+
+local function DoTalk(npcName)
+    if not TeleportToNPC(npcName) then return false end
+    task.wait(1)
+    if not WaitForDialogue(8) then return false end
+    task.wait(0.3)
+    ClickThroughDialogue()
+    task.wait(0.5)
+    AcceptQuest()
+    return true
+end
+
+local function DoHit(targetName, amount)
+    local target = workspace:FindFirstChild(targetName, true)
+    if not target then return false end
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildWhichIsA("Humanoid")
+    local targetPart = target:FindFirstChild("HumanoidRootPart") or target:FindFirstChildWhichIsA("BasePart")
+    if not hrp or not humanoid or not targetPart then return false end
+    humanoid:MoveTo(targetPart.Position)
+    task.wait(2)
+    for _ = 1, amount do
+        pcall(function() mouse1press() end)
+        task.wait(0.3)
+        pcall(function() mouse1release() end)
+        task.wait(0.3)
+    end
+    return true
+end
+
+local function DoCast(skillName)
+    local hotbar = LocalPlayer.PlayerGui:FindFirstChild("Hotbar")
+    if not hotbar then return false end
+    for _, slot in pairs(hotbar:GetDescendants()) do
+        if slot:IsA("Frame") then
+            local label = slot:FindFirstChild("TextLabel")
+            if label and label.Text == skillName then
+                local btn = slot:FindFirstChild("ImageButton") or slot:FindFirstChildWhichIsA("GuiButton")
+                if btn then
+                    ClickGuiButton(btn)
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function DoEquipSkill(skillName)
+    local inventory = LocalPlayer.PlayerGui:FindFirstChild("Inventory")
+    if not inventory then return false end
+    for _, slot in pairs(inventory:GetDescendants()) do
+        if slot:IsA("Frame") then
+            local label = slot:FindFirstChild("TextLabel")
+            if label and label.Text == skillName then
+                local btn = slot:FindFirstChild("ImageButton") or slot:FindFirstChildWhichIsA("GuiButton")
+                if btn then
+                    ClickGuiButton(btn)
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function DoOpen(elementName)
+    if elementName == "Logbook" then
+        pcall(function() keyclick(VK_L) end)
+        return true
+    end
+    return false
+end
+
+local function GetActiveQuest()
+    local ok, result = pcall(function()
+        local quests = ClientCache.Data.Quests
+        if #quests == 0 then return nil end
+        return quests[1]
+    end)
+    return ok and result or nil
+end
+
+local function GetCurrentStage(quest)
+    if not quest then return nil, nil end
+    for i, stage in ipairs(quest.Stages) do
+        if not stage.Complete then
+            return i, stage
+        end
+    end
+    return nil, nil
+end
+
+local function DoQuestAction(condition)
+    if condition.Complete then return true end
+    if condition.Type == "Block" then
+        DoBlock()
+        return true
+    elseif condition.Type == "Dash" then
+        local needed = (condition.Target.RequiredAmount or 1) - (condition.Target.Amount or 0)
+        if needed > 0 then DoDash(needed) end
+        return true
+    elseif condition.Type == "Talk" then
+        return DoTalk(condition.Target.Name)
+    elseif condition.Type == "Hit" then
+        local needed = (condition.Target.RequiredAmount or 1) - (condition.Target.Amount or 0)
+        if needed > 0 then DoHit(condition.Target.Name, needed) end
+        return true
+    elseif condition.Type == "Cast" then
+        return DoCast(condition.Target.Name)
+    elseif condition.Type == "EquipSkill" then
+        return DoEquipSkill(condition.Target.Name)
+    elseif condition.Type == "Open" then
+        return DoOpen(condition.Target.Name)
+    end
+    return false
+end
+
+-- ============================================
 -- TAB 1: AUTO RACE ROLL
 -- ============================================
 
@@ -448,6 +690,64 @@ CodesTab:CreateText({
 })
 
 -- ============================================
+-- TAB 4: AUTO QUEST
+-- ============================================
+
+local QuestTab = Window:CreateTab({ name = "Auto Quest" })
+
+QuestTab:CreateText({
+    name = "Auto Quest Info",
+    text = "Automatically progresses through the Officer Graves quest chain and beyond. Handles Talk, Block, Dash, Hit, Cast, and Open objectives.",
+})
+
+QuestTab:CreateSection({ name = "Not Automatable" })
+
+QuestTab:CreateText({
+    name = "Limitations",
+    text = "Invest Stat Points (server checks unspent points), Level Gates (some quests require min level), Purchase/Smelt/Upgrade (need station proximity), Steal/CashOut (complex interactions), EquipSkill (inventory UI varies per quest), Cast (hotbar UI varies), Shoot (aim-dependent).",
+})
+
+QuestTab:CreateSection({ name = "Control" })
+
+local QuestStatusText = QuestTab:CreateText({
+    name = "Status",
+    text = "Idle",
+})
+
+local QuestToggle = QuestTab:CreateToggle({
+    name = "Enable Auto Quest",
+    description = "Automatically progress through quest objectives",
+    callback = function(value)
+        State.AutoQuest = value
+        if value then
+            State.QuestStatus = "Starting..."
+        else
+            State.QuestStatus = "Idle"
+        end
+    end,
+})
+
+QuestTab:CreateButton({
+    name = "Force Block (Test)",
+    description = "Hold F to block once",
+    callback = function()
+        task.spawn(function()
+            DoBlock()
+        end)
+    end,
+})
+
+QuestTab:CreateButton({
+    name = "Force Talk to Graves (Test)",
+    description = "Teleport to Officer Graves and start dialogue",
+    callback = function()
+        task.spawn(function()
+            DoTalk("Officer Graves")
+        end)
+    end,
+})
+
+-- ============================================
 -- AUTO ROLL LOOPS
 -- ============================================
 
@@ -515,6 +815,57 @@ task.spawn(function()
             end
         end
         task.wait(0.25)
+    end
+end)
+
+-- ============================================
+-- AUTO QUEST LOOP
+-- ============================================
+
+task.spawn(function()
+    while true do
+        if State.AutoQuest then
+            local quest = GetActiveQuest()
+            if not quest then
+                State.QuestStatus = "No active quest"
+                if QuestStatusText then pcall(function() QuestStatusText:Set("No active quest") end) end
+                task.wait(2)
+            else
+                local stageIndex, stage = GetCurrentStage(quest)
+                if not stageIndex then
+                    State.QuestStatus = "Quest complete: " .. (quest.Title or "Unknown")
+                    if QuestStatusText then pcall(function() QuestStatusText:Set(State.QuestStatus) end) end
+                    task.wait(2)
+                else
+                    local stageTitle = stage.Title or "Unknown"
+                    State.QuestStatus = string.format("%s [%d/%d] %s", quest.Title or "?", stageIndex, #quest.Stages, stageTitle)
+                    if QuestStatusText then pcall(function() QuestStatusText:Set(State.QuestStatus) end) end
+
+                    local allComplete = true
+                    for _, cond in ipairs(stage.Conditions or {}) do
+                        if not cond.Complete then
+                            allComplete = false
+                            local acted = DoQuestAction(cond)
+                            if acted then
+                                task.wait(2)
+                            else
+                                State.QuestStatus = "Blocked: " .. (cond.Type or "?") .. " - " .. (cond.Target and cond.Target.Name or "?")
+                                if QuestStatusText then pcall(function() QuestStatusText:Set(State.QuestStatus) end) end
+                                task.wait(5)
+                            end
+                        end
+                    end
+
+                    if allComplete then
+                        task.wait(1)
+                    end
+                end
+            end
+        else
+            State.QuestStatus = "Idle"
+            if QuestStatusText then pcall(function() QuestStatusText:Set("Idle") end) end
+        end
+        task.wait(0.5)
     end
 end)
 
