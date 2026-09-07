@@ -492,24 +492,36 @@ task.spawn(function()
     end
 end)
 
--- Trait auto roll - fires one slot at a time, stops each slot individually
+-- Trait auto roll - fires all active slots at once, server queues them
 task.spawn(function()
     while true do
         if State.AutoTraitRoll then
             local activeSlots = GetActiveSlots()
             if #activeSlots > 0 then
+                local fired = {}
                 for _, slotNum in pairs(activeSlots) do
                     if State.AutoTraitRoll and State[SlotStateKeys[slotNum]] then
-                        TraitStatus:Append("Rolling slot " .. slotNum)
+                        TraitStatus:Append("Firing slot " .. slotNum)
                         pcall(function() RerollRemote:FireServer("Trait", slotNum) end)
                         task.spawn(function() SkipTraitAnimation(slotNum) end)
-                        task.wait(COOLDOWN)
+                        table.insert(fired, slotNum)
+                        task.wait(0.5)
+                    end
+                end
 
+                if #fired > 0 then
+                    task.wait(COOLDOWN - 0.5)
+                end
+
+                for _, slotNum in pairs(fired) do
+                    if State.AutoTraitRoll and State[SlotStateKeys[slotNum]] then
                         local traitName = GetSlotTraitName(slotNum)
                         if traitName and IsTargetSingleTrait(traitName) then
-                            TraitStatus:Append("Slot " .. slotNum .. " hit: " .. traitName .. " — stopping slot " .. slotNum)
+                            TraitStatus:Append("Slot " .. slotNum .. " hit: " .. traitName .. " — stopping")
                             State[SlotStateKeys[slotNum]] = false
                             pcall(function() SlotToggles[slotNum]:Set(false) end)
+                        else
+                            TraitStatus:Append("Slot " .. slotNum .. ": " .. (traitName or "?"))
                         end
                     end
                 end
