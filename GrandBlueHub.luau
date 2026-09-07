@@ -32,8 +32,8 @@ if not success or not Rayfield then
 end
 
 local Window = Rayfield:CreateWindow({
-    name = "Grand Blue Hub",
-    subtitle = "Auto Roll & Codes",
+    name = "Callie Hub",
+    subtitle = "By SHEN",
     configuration = {
         autoSave = true,
         autoLoad = true,
@@ -338,13 +338,6 @@ local RaceToggle = RaceTab:CreateToggle({
     callback = function(value) State.AutoRaceRoll = value end,
 })
 
-local RaceStatus = RaceTab:CreateConsole({
-    name = "Roll Status",
-    height = 100,
-    follow = true,
-    maxLines = 30,
-})
-
 -- ============================================
 -- TAB 2: AUTO TRAIT ROLL
 -- ============================================
@@ -414,13 +407,6 @@ local SlotStateKeys = {
     [3] = "RollSlot3",
 }
 
-local TraitStatus = TraitTab:CreateConsole({
-    name = "Roll Status",
-    height = 100,
-    follow = true,
-    maxLines = 30,
-})
-
 -- ============================================
 -- TAB 3: AUTO CODES
 -- ============================================
@@ -474,17 +460,14 @@ task.spawn(function()
             local race, variant = GetRace()
             if race then
                 if IsTargetRace(race, variant) then
-                    RaceStatus:Append("Target: " .. race .. " " .. (variant or "Normal"))
                     State.AutoRaceRoll = false
                     pcall(function() RaceToggle:Set(false) end)
                 else
-                    RaceStatus:Append("Rolling... " .. race .. " " .. (variant or ""))
                     pcall(function() RerollRemote:FireServer("Race") end)
                     task.spawn(function() SkipRaceAnimation() end)
                     task.wait(COOLDOWN)
                 end
             else
-                RaceStatus:Append("Waiting for character data...")
                 task.wait(2)
             end
         end
@@ -501,7 +484,6 @@ task.spawn(function()
                 local fired = {}
                 for _, slotNum in pairs(activeSlots) do
                     if State.AutoTraitRoll and State[SlotStateKeys[slotNum]] then
-                        TraitStatus:Append("Firing slot " .. slotNum)
                         pcall(function() RerollRemote:FireServer("Trait", slotNum) end)
                         task.spawn(function() SkipTraitAnimation(slotNum) end)
                         table.insert(fired, slotNum)
@@ -517,22 +499,17 @@ task.spawn(function()
                     if State.AutoTraitRoll and State[SlotStateKeys[slotNum]] then
                         local traitName = GetSlotTraitName(slotNum)
                         if traitName and IsTargetSingleTrait(traitName) then
-                            TraitStatus:Append("Slot " .. slotNum .. " hit: " .. traitName .. " — stopping")
                             State[SlotStateKeys[slotNum]] = false
                             pcall(function() SlotToggles[slotNum]:Set(false) end)
-                        else
-                            TraitStatus:Append("Slot " .. slotNum .. ": " .. (traitName or "?"))
                         end
                     end
                 end
 
                 if #GetActiveSlots() == 0 then
-                    TraitStatus:Append("All slots done!")
                     State.AutoTraitRoll = false
                     pcall(function() TraitToggle:Set(false) end)
                 end
             else
-                TraitStatus:Append("No slots selected!")
                 State.AutoTraitRoll = false
                 pcall(function() TraitToggle:Set(false) end)
             end
