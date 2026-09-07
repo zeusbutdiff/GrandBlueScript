@@ -2,10 +2,12 @@
     Grand Blue Auto-Roll & Codes
     UI Library: Rayfield Gen2
     Features: Auto Race Roll, Auto Trait Roll, Auto Redeem Codes
+    Animation skip via fast-tween override
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 local Events = ReplicatedStorage:WaitForChild("Events", 10)
@@ -45,15 +47,32 @@ local Window = Rayfield:CreateWindow({
 
 local Races = {"Human", "Seafolk", "Skyfolk", "Beastfolk", "Dwarf"}
 
-local Traits = {
-    "Will of the King", "Heavenly Restricted", "Limit-Breaker", "Man of Steel", "Beast Tamer",
-    "Snake", "Swordsman's Shame", "Glass Cannon", "Pyromaniac",
-    "Prodigy", "Usain Bolt", "Flash God", "Ruthless", "Arrogant", "Chameleon", "Second Wind",
-    "Super Stephon Meal", "Fast Learner", "Gifted", "#1 Swimmer", "Gourmand", "Adrenaline", "Escape Artist",
-    "Coward", "Foodie", "Talented", "Climber", "Athlete", "Night Owl", "Early Bird",
-    "Enduring Speed", "Glutton", "Bargainer", "Pacifist", "Sneaky", "Garbage Collector"
-}
 local TraitRarities = {"Mythic", "Legendary", "Epic", "Rare", "Uncommon", "Common"}
+
+local TraitNames = {
+    "Beast Tamer", "Copycat", "Gaudy", "Limit-Breaker", "Man of Steel", "Maniac",
+    "Battle Tempo", "Glass Cannon", "Predator", "Protagonist", "Pyromaniac",
+    "Arrogant", "Assassin", "Chameleon", "Marathoner", "Prodigy", "Second Wind", "Sturdy Guard",
+    "Adrenaline", "Escape Artist", "Gourmand", "Iron Will", "Nimble",
+    "Athlete", "Climber", "Coward", "Early Bird", "Vengeful",
+    "Bargainer", "Diver", "Enduring Speed", "Garbage Collector", "Hoarder", "Pacifist", "Pitcher",
+}
+
+local TraitRarityMap = {
+    ["Beast Tamer"] = "Mythic", ["Copycat"] = "Mythic", ["Gaudy"] = "Mythic",
+    ["Limit-Breaker"] = "Mythic", ["Man of Steel"] = "Mythic", ["Maniac"] = "Mythic",
+    ["Battle Tempo"] = "Legendary", ["Glass Cannon"] = "Legendary",
+    ["Predator"] = "Legendary", ["Protagonist"] = "Legendary", ["Pyromaniac"] = "Legendary",
+    ["Arrogant"] = "Epic", ["Assassin"] = "Epic", ["Chameleon"] = "Epic",
+    ["Marathoner"] = "Epic", ["Prodigy"] = "Epic", ["Second Wind"] = "Epic", ["Sturdy Guard"] = "Epic",
+    ["Adrenaline"] = "Rare", ["Escape Artist"] = "Rare", ["Gourmand"] = "Rare",
+    ["Iron Will"] = "Rare", ["Nimble"] = "Rare",
+    ["Athlete"] = "Uncommon", ["Climber"] = "Uncommon", ["Coward"] = "Uncommon",
+    ["Early Bird"] = "Uncommon", ["Vengeful"] = "Uncommon",
+    ["Bargainer"] = "Common", ["Diver"] = "Common", ["Enduring Speed"] = "Common",
+    ["Garbage Collector"] = "Common", ["Hoarder"] = "Common", ["Pacifist"] = "Common", ["Pitcher"] = "Common",
+}
+
 local Codes = {
     "RollWithIt", "PocketOfStars", "GrandBlueCode", "CelestialBlessing",
     "FruitBasket", "NewYouNewCrew", "10KCCU", "WorldBossBroke",
@@ -71,7 +90,9 @@ local State = {
     AutoTraitRoll = false,
     TargetTraits = {},
     TargetRarities = {},
-    TraitSlots = {},
+    RollSlot1 = false,
+    RollSlot2 = false,
+    RollSlot3 = false,
 }
 
 -- ============================================
@@ -100,7 +121,7 @@ local function GetTraits()
     end)
     if ok and traitData then
         local traitNames = {}
-        for slotName, traitName in pairs(traitData) do
+        for _, traitName in pairs(traitData) do
             if traitName and traitName ~= false and traitName ~= "None" then
                 table.insert(traitNames, traitName)
             end
@@ -133,50 +154,92 @@ local function IsTargetTrait(traitNames)
         for _, target in pairs(State.TargetTraits) do
             if target == traitName then return true end
         end
+        if #State.TargetRarities > 0 then
+            local rarity = TraitRarityMap[traitName]
+            if rarity then
+                for _, targetRarity in pairs(State.TargetRarities) do
+                    if targetRarity == rarity then return true end
+                end
+            end
+        end
     end
     return false
+end
+
+local function GetActiveSlots()
+    local slots = {}
+    if State.RollSlot1 then table.insert(slots, 1) end
+    if State.RollSlot2 then table.insert(slots, 2) end
+    if State.RollSlot3 then table.insert(slots, 3) end
+    return slots
+end
+
+-- ============================================
+-- ANIMATION SKIP
+-- ============================================
+
+local function SkipTraitAnimation(slotNum)
+    pcall(function()
+        local gui = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization")
+        if not gui then return end
+        local right = gui:FindFirstChild("Right", true)
+        if not right then return end
+        local traits = right:FindFirstChild("Traits", true)
+        if not traits then return end
+        local slot = traits:FindFirstChild("Slot " .. slotNum)
+        if not slot then return end
+
+        local spinFrame = slot:FindFirstChild("SpinFrame", true)
+        if not spinFrame then return end
+        local bg = spinFrame:FindFirstChild("BackgroundFrame", true)
+        if not bg then return end
+        local mf = bg:FindFirstChild("MainFrame", true)
+        if not mf then return end
+
+        for _ = 1, 10 do
+            task.wait(0.1)
+            if slot:GetAttribute("Spinning") == true then break end
+        end
+        if not slot:GetAttribute("Spinning") then return end
+
+        local goal = mf:GetAttribute("Goal")
+        if not goal then return end
+
+        slot:SetAttribute("Skipped", true)
+        local fastInfo = TweenInfo.new(0.25, Enum.EasingStyle.Circular, Enum.EasingDirection.Out)
+        local fastTween = TweenService:Create(mf, fastInfo, {Position = goal})
+        fastTween:Play()
+        task.wait(0.35)
+    end)
 end
 
 local function SkipRaceAnimation()
     pcall(function()
         local gui = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization")
         if not gui then return end
-        local race = gui:FindFirstChild("Race", true)
+        local right = gui:FindFirstChild("Right", true)
+        if not right then return end
+        local race = right:FindFirstChild("Race", true)
         if not race then return end
         local spinner = race:FindFirstChild("Spinner", true)
         if not spinner then return end
-        local frame = spinner:FindFirstChild("Frame", true)
-        if not frame then return end
-        local mf = frame:FindFirstChild("MainFrame", true)
-        if mf and mf.Visible then
-            local goal = mf:GetAttribute("Goal")
-            if goal then
-                mf.Position = goal
-            end
-        end
-    end)
-end
-
-local function SkipTraitAnimation(slotNum)
-    pcall(function()
-        local gui = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization")
-        if not gui then return end
-        local traits = gui:FindFirstChild("Traits", true)
-        if not traits then return end
-        local slot = traits:FindFirstChild("Slot " .. slotNum)
-        if not slot then return end
-        slot:SetAttribute("Skipped", true)
-        local spinFrame = slot:FindFirstChild("SpinFrame", true)
-        if not spinFrame then return end
-        local bg = spinFrame:FindFirstChild("BackgroundFrame", true)
+        local bg = spinner:FindFirstChild("Frame", true)
+        if not bg then return end
+        bg = bg:FindFirstChild("BackgroundFrame", true)
         if not bg then return end
         local mf = bg:FindFirstChild("MainFrame", true)
-        if mf and mf.Visible then
-            local goal = mf:GetAttribute("Goal")
-            if goal then
-                mf.Position = goal
-            end
+        if not mf then return end
+
+        for _ = 1, 10 do
+            task.wait(0.1)
+            if mf.Visible then break end
         end
+        if not mf.Visible then return end
+
+        local fastInfo = TweenInfo.new(0.25, Enum.EasingStyle.Circular, Enum.EasingDirection.Out)
+        local fastTween = TweenService:Create(mf, fastInfo, {Position = UDim2.new(0.5, 0, -2, 0)})
+        fastTween:Play()
+        task.wait(0.35)
     end)
 end
 
@@ -232,17 +295,27 @@ local TraitTab = Window:CreateTab({ name = "Auto Trait Roll" })
 
 TraitTab:CreateText({
     name = "Trait Roll Settings",
-    text = "Slots roll one at a time with animation skipped automatically.",
+    text = "Enable the slots you want to roll. Each slot rolls with 5s cooldown.",
 })
 
 TraitTab:CreateSection({ name = "Slots to Roll" })
 
-TraitTab:CreateDropdown({
-    name = "Trait Slots",
-    description = "Select which trait slots to roll (multiple allowed)",
-    multiSelect = true,
-    options = {"1", "2", "3"},
-    callback = function(value) State.TraitSlots = value end,
+local Slot1Toggle = TraitTab:CreateToggle({
+    name = "Roll Slot 1",
+    description = "Include slot 1 in auto roll",
+    callback = function(value) State.RollSlot1 = value end,
+})
+
+local Slot2Toggle = TraitTab:CreateToggle({
+    name = "Roll Slot 2",
+    description = "Include slot 2 in auto roll",
+    callback = function(value) State.RollSlot2 = value end,
+})
+
+local Slot3Toggle = TraitTab:CreateToggle({
+    name = "Roll Slot 3",
+    description = "Include slot 3 in auto roll",
+    callback = function(value) State.RollSlot3 = value end,
 })
 
 TraitTab:CreateSection({ name = "Target Selection" })
@@ -251,7 +324,7 @@ TraitTab:CreateDropdown({
     name = "Target Traits",
     description = "Select specific traits to stop on",
     multiSelect = true,
-    options = Traits,
+    options = TraitNames,
     callback = function(value) State.TargetTraits = value end,
 })
 
@@ -337,9 +410,8 @@ task.spawn(function()
                 else
                     RaceStatus:Append("Rolling... " .. race .. " " .. (variant or ""))
                     pcall(function() RerollRemote:FireServer("Race") end)
-                    task.wait(0.5)
-                    SkipRaceAnimation()
-                    task.wait(COOLDOWN - 0.5)
+                    task.spawn(function() SkipRaceAnimation() end)
+                    task.wait(COOLDOWN)
                 end
             else
                 RaceStatus:Append("Waiting for character data...")
@@ -350,25 +422,30 @@ task.spawn(function()
     end
 end)
 
--- Trait auto roll - slots fire one at a time, animation skipped
+-- Trait auto roll - fires one slot at a time with cooldown
 task.spawn(function()
     while true do
-        if State.AutoTraitRoll and #State.TraitSlots > 0 then
+        if State.AutoTraitRoll then
             local traitNames = GetTraits()
             if IsTargetTrait(traitNames) then
                 TraitStatus:Append("Target found! Stopping.")
                 State.AutoTraitRoll = false
                 pcall(function() TraitToggle:Set(false) end)
             else
-                for _, slot in pairs(State.TraitSlots) do
-                    local slotNum = tonumber(slot)
-                    if slotNum and State.AutoTraitRoll then
-                        TraitStatus:Append("Rolling slot " .. slot)
-                        pcall(function() RerollRemote:FireServer("Trait", slotNum) end)
-                        task.wait(0.5)
-                        SkipTraitAnimation(slotNum)
-                        task.wait(COOLDOWN - 0.5)
+                local activeSlots = GetActiveSlots()
+                if #activeSlots > 0 then
+                    for _, slotNum in pairs(activeSlots) do
+                        if State.AutoTraitRoll then
+                            TraitStatus:Append("Rolling slot " .. slotNum)
+                            pcall(function() RerollRemote:FireServer("Trait", slotNum) end)
+                            task.spawn(function() SkipTraitAnimation(slotNum) end)
+                            task.wait(COOLDOWN)
+                        end
                     end
+                else
+                    TraitStatus:Append("No slots selected!")
+                    State.AutoTraitRoll = false
+                    pcall(function() TraitToggle:Set(false) end)
                 end
             end
         end
