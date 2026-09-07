@@ -45,14 +45,6 @@ local Window = Rayfield:CreateWindow({
 
 local Races = {"Human", "Seafolk", "Skyfolk", "Beastfolk", "Dwarf"}
 
-local RaceVariantMap = {
-    Human = {},
-    Seafolk = {"Half Fish"},
-    Skyfolk = {"Celestial"},
-    Beastfolk = {"Cat", "Bunny"},
-    Dwarf = {"Long Legged", "Long Armed"},
-}
-
 local Traits = {
     "Will of the King", "Heavenly Restricted", "Limit-Breaker", "Man of Steel", "Beast Tamer",
     "Snake", "Swordsman's Shame", "Glass Cannon", "Pyromaniac",
@@ -145,10 +137,8 @@ local function IsTargetTrait(traitNames)
     return false
 end
 
-local function SkipRaceAnimation()
+local function TrySkipRaceAnimation()
     pcall(function()
-        local char = LocalPlayer.Character
-        if char then return end
         local gui = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization")
         if not gui then return end
         local right = gui:FindFirstChild("Right", true)
@@ -169,7 +159,7 @@ local function SkipRaceAnimation()
     end)
 end
 
-local function SkipTraitAnimation(slotNum)
+local function TrySkipAllTraitAnimations()
     pcall(function()
         local gui = LocalPlayer.PlayerGui:FindFirstChild("CharacterCustomization")
         if not gui then return end
@@ -177,21 +167,26 @@ local function SkipTraitAnimation(slotNum)
         if not right then return end
         local traits = right:FindFirstChild("Traits", true)
         if not traits then return end
-        local slot = traits:FindFirstChild("Slot " .. slotNum, true)
-        if not slot then return end
-        local spinFrame = slot:FindFirstChild("SpinFrame", true)
-        if not spinFrame then return end
-        local bgFrame = spinFrame:FindFirstChild("BackgroundFrame", true)
-        if not bgFrame then return end
-        local mainFrame = bgFrame:FindFirstChild("MainFrame", true)
-        if mainFrame and mainFrame.Visible then
-            local goal = mainFrame:GetAttribute("Goal")
-            if goal then
-                mainFrame.Position = goal
+        for i = 1, 3 do
+            local slot = traits:FindFirstChild("Slot " .. i)
+            if slot then
+                slot:SetAttribute("Skipped", true)
             end
         end
     end)
 end
+
+local function ListenForRerollSkip()
+    RerollRemote.OnClientEvent:Connect(function(action, ...)
+        if action == "Race" then
+            task.defer(function() TrySkipRaceAnimation() end)
+        elseif action == "Trait" then
+            task.defer(function() TrySkipAllTraitAnimations() end)
+        end
+    end)
+end
+
+ListenForRerollSkip()
 
 -- ============================================
 -- TAB 1: AUTO RACE ROLL
@@ -201,7 +196,7 @@ local RaceTab = Window:CreateTab({ name = "Auto Race Roll" })
 
 RaceTab:CreateText({
     name = "Race Roll Settings",
-    text = "Half Fish=Seafolk, Celestial=Skyfolk, Cat/Bunny=Beastfolk, Long Legged/Long Armed=Dwarf. Human has no variants.",
+    text = "Half Fish=Seafolk, Celestial=Skyfolk, Cat/Bunny=Beastfolk, Long Legged/Long Armed=Dwarf.",
 })
 
 RaceTab:CreateSection({ name = "Target Selection" })
@@ -245,7 +240,7 @@ local TraitTab = Window:CreateTab({ name = "Auto Trait Roll" })
 
 TraitTab:CreateText({
     name = "Trait Roll Settings",
-    text = "Select target traits/rarities and which slots to roll. Animation is auto-skipped.",
+    text = "Select target traits/rarities and which slots to roll. All selected slots fire at once.",
 })
 
 TraitTab:CreateSection({ name = "Slots to Roll" })
@@ -335,9 +330,9 @@ CodesTab:CreateText({
 -- AUTO ROLL LOOPS
 -- ============================================
 
-local RACE_COOLDOWN = 5
-local TRAIT_COOLDOWN = 5
+local COOLDOWN = 5.5
 
+-- Race auto roll
 task.spawn(function()
     while true do
         if State.AutoRaceRoll then
@@ -349,10 +344,10 @@ task.spawn(function()
                     pcall(function() RaceToggle:Set(false) end)
                 else
                     RaceStatus:Append("Rolling... " .. race .. " " .. (variant or ""))
-                    RerollRemote:FireServer("Race")
-                    task.wait(1)
-                    SkipRaceAnimation()
-                    task.wait(RACE_COOLDOWN - 1)
+                    pcall(function() RerollRemote:FireServer("Race") end)
+                    task.wait(0.3)
+                    TrySkipRaceAnimation()
+                    task.wait(COOLDOWN - 0.3)
                 end
             else
                 RaceStatus:Append("Waiting for character data...")
@@ -363,25 +358,26 @@ task.spawn(function()
     end
 end)
 
+-- Trait auto roll - fires all selected slots at once
 task.spawn(function()
     while true do
         if State.AutoTraitRoll and #State.TraitSlots > 0 then
             local traitNames = GetTraits()
             if IsTargetTrait(traitNames) then
-                TraitStatus:Append("Target trait found!")
+                TraitStatus:Append("Target trait found! Stopping.")
                 State.AutoTraitRoll = false
                 pcall(function() TraitToggle:Set(false) end)
             else
+                TraitStatus:Append("Rolling slots: " .. table.concat(State.TraitSlots, ", "))
                 for _, slot in pairs(State.TraitSlots) do
                     local slotNum = tonumber(slot)
                     if slotNum then
-                        TraitStatus:Append("Rolling slot " .. slot)
-                        RerollRemote:FireServer("Trait", slotNum)
-                        task.wait(1)
-                        SkipTraitAnimation(slotNum)
-                        task.wait(TRAIT_COOLDOWN - 1)
+                        pcall(function() RerollRemote:FireServer("Trait", slotNum) end)
                     end
                 end
+                task.wait(0.3)
+                TrySkipAllTraitAnimations()
+                task.wait(COOLDOWN - 0.3)
             end
         end
         task.wait(0.25)
