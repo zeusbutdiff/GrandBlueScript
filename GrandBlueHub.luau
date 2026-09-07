@@ -7,23 +7,40 @@
 -- Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
 -- Variables
 local LocalPlayer = Players.LocalPlayer
-local Events = ReplicatedStorage:WaitForChild("Events")
-local RerollRemote = Events:WaitForChild("Reroll")
-local CodesRemote = Events:WaitForChild("Codes")
-local GetDataRemote = Events:WaitForChild("GetData")
+
+-- Wait for events
+local Events = ReplicatedStorage:WaitForChild("Events", 10)
+if not Events then
+    warn("[GrandBlueHub] Events folder not found!")
+    return
+end
+
+local RerollRemote = Events:WaitForChild("Reroll", 10)
+local CodesRemote = Events:WaitForChild("Codes", 10)
+
+if not RerollRemote or not CodesRemote then
+    warn("[GrandBlueHub] Required remotes not found!")
+    return
+end
 
 -- Load UI Library
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+local success, Rayfield = pcall(function()
+    return loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+end)
+
+if not success or not Rayfield then
+    warn("[GrandBlueHub] Failed to load Rayfield:", Rayfield)
+    return
+end
 
 -- Create Window
 local Window = Rayfield:CreateWindow({
     Name = "Grand Blue Hub",
     LoadingTitle = "Grand Blue Hub",
-    LoadingSubtitle = "Loading...",
+    LoadingSubtitle = "Loading features...",
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "GrandBlueHub",
@@ -33,36 +50,20 @@ local Window = Rayfield:CreateWindow({
 })
 
 -- ============================================
--- DATA: Races and Traits
+-- DATA
 -- ============================================
 
-local Races = {
-    "Human", "Seafolk", "Skyfolk", "Beastfolk", "Dwarf"
-}
-
-local RaceVariants = {
-    "Normal", "Long Legged", "Long Armed", "Half Fish", "Celestial", "Cat", "Bunny"
-}
-
+local Races = {"Human", "Seafolk", "Skyfolk", "Beastfolk", "Dwarf"}
+local RaceVariants = {"Normal", "Long Legged", "Long Armed", "Half Fish", "Celestial", "Cat", "Bunny"}
 local Traits = {
-    -- Mythic
     "Will of the King", "Heavenly Restricted", "Limit-Breaker", "Man of Steel", "Beast Tamer",
-    -- Legendary
     "Snake", "Swordsman's Shame", "Glass Cannon", "Pyromaniac",
-    -- Epic
     "Prodigy", "Usain Bolt", "Flash God", "Ruthless", "Arrogant", "Chameleon", "Second Wind",
-    -- Rare
     "Super Stephon Meal", "Fast Learner", "Gifted", "#1 Swimmer", "Gourmand", "Adrenaline", "Escape Artist",
-    -- Uncommon
     "Coward", "Foodie", "Talented", "Climber", "Athlete", "Night Owl", "Early Bird",
-    -- Common
     "Enduring Speed", "Glutton", "Bargainer", "Pacifist", "Sneaky", "Garbage Collector"
 }
-
-local TraitRarities = {
-    "Mythic", "Legendary", "Epic", "Rare", "Uncommon", "Common"
-}
-
+local TraitRarities = {"Mythic", "Legendary", "Epic", "Rare", "Uncommon", "Common"}
 local Codes = {
     "RollWithIt", "PocketOfStars", "GrandBlueCode", "CelestialBlessing",
     "FruitBasket", "NewYouNewCrew", "10KCCU", "WorldBossBroke",
@@ -74,24 +75,17 @@ local Codes = {
 -- ============================================
 
 local State = {
-    -- Race Roll
     AutoRaceRoll = false,
     TargetRaces = {},
     TargetVariants = {},
     RaceSkipAnimation = true,
     RaceDelay = 2,
-    
-    -- Trait Roll
     AutoTraitRoll = false,
     TargetTraits = {},
     TargetRarities = {},
     TraitSlot = 1,
     TraitSkipAnimation = true,
     TraitDelay = 2,
-    
-    -- Codes
-    AutoRedeem = false,
-    RedeemedCodes = {},
 }
 
 -- ============================================
@@ -142,10 +136,8 @@ local function IsTargetRace(race, variant)
     if #State.TargetRaces == 0 and #State.TargetVariants == 0 then
         return false
     end
-    
     local raceMatch = #State.TargetRaces == 0
     local variantMatch = #State.TargetVariants == 0
-    
     if #State.TargetRaces > 0 then
         for _, target in pairs(State.TargetRaces) do
             if target == race then
@@ -154,7 +146,6 @@ local function IsTargetRace(race, variant)
             end
         end
     end
-    
     if #State.TargetVariants > 0 then
         for _, target in pairs(State.TargetVariants) do
             if target == variant then
@@ -163,7 +154,6 @@ local function IsTargetRace(race, variant)
             end
         end
     end
-    
     return raceMatch and variantMatch
 end
 
@@ -171,9 +161,7 @@ local function IsTargetTrait(traits)
     if #State.TargetTraits == 0 and #State.TargetRarities == 0 then
         return false
     end
-    
     for _, traitName in pairs(traits) do
-        -- Check by name
         if #State.TargetTraits > 0 then
             for _, target in pairs(State.TargetTraits) do
                 if target == traitName then
@@ -181,28 +169,8 @@ local function IsTargetTrait(traits)
                 end
             end
         end
-        
-        -- Check by rarity (would need trait info lookup)
-        -- For now, we'll rely on name matching
     end
-    
     return false
-end
-
-local function FireRaceReroll()
-    RerollRemote:FireServer("Race")
-end
-
-local function FireRaceApply()
-    RerollRemote:FireServer("RaceApply")
-end
-
-local function FireTraitReroll(slot)
-    RerollRemote:FireServer("Trait", slot or State.TraitSlot)
-end
-
-local function RedeemCode(code)
-    CodesRemote:FireServer(code)
 end
 
 -- ============================================
@@ -211,22 +179,11 @@ end
 
 local RaceTab = Window:CreateTab("Auto Race Roll", 4483362458)
 
--- Section: Settings
 RaceTab:CreateSection("Settings")
-
-local RaceToggle = RaceTab:CreateToggle({
-    name = "Enable Auto Race Roll",
-    description = "Automatically roll for target race/variant",
-    flag = "AutoRaceRoll",
-    callback = function(value)
-        State.AutoRaceRoll = value
-    end,
-})
 
 local RaceSkipToggle = RaceTab:CreateToggle({
     name = "Skip Animation",
-    description = "Skip spin animation (experimental, faster rolling)",
-    flag = "RaceSkipAnimation",
+    description = "Skip spin animation (faster rolling)",
     value = true,
     callback = function(value)
         State.RaceSkipAnimation = value
@@ -234,27 +191,24 @@ local RaceSkipToggle = RaceTab:CreateToggle({
 })
 
 local RaceDelaySlider = RaceTab:CreateSlider({
-    name = "Roll Delay (seconds)",
-    description = "Delay between rolls",
+    name = "Roll Delay",
+    description = "Delay between rolls in seconds",
     range = {1, 10},
     increment = 0.5,
     value = 2,
     suffix = "s",
-    flag = "RaceDelay",
     callback = function(value)
         State.RaceDelay = value
     end,
 })
 
--- Section: Targets
 RaceTab:CreateSection("Target Race(s)")
 
 local RaceDropdown = RaceTab:CreateDropdown({
     name = "Target Races",
-    description = "Select which races to stop on",
+    description = "Select races to stop on",
     multiSelect = true,
     options = Races,
-    flag = "TargetRaces",
     callback = function(value)
         State.TargetRaces = value
     end,
@@ -262,23 +216,29 @@ local RaceDropdown = RaceTab:CreateDropdown({
 
 local VariantDropdown = RaceTab:CreateDropdown({
     name = "Target Variants",
-    description = "Select which variants to stop on",
+    description = "Select variants to stop on",
     multiSelect = true,
     options = RaceVariants,
-    flag = "TargetVariants",
     callback = function(value)
         State.TargetVariants = value
     end,
 })
 
--- Section: Status
-RaceTab:CreateSection("Status")
+RaceTab:CreateSection("Control")
+
+local RaceToggle = RaceTab:CreateToggle({
+    name = "Enable Auto Race Roll",
+    description = "Start auto rolling",
+    callback = function(value)
+        State.AutoRaceRoll = value
+    end,
+})
 
 local RaceStatus = RaceTab:CreateConsole({
-    name = "Roll Status",
-    height = 100,
+    name = "Status",
+    height = 80,
     follow = true,
-    maxLines = 50,
+    maxLines = 20,
 })
 
 -- ============================================
@@ -287,22 +247,11 @@ local RaceStatus = RaceTab:CreateConsole({
 
 local TraitTab = Window:CreateTab("Auto Trait Roll", 4483362458)
 
--- Section: Settings
 TraitTab:CreateSection("Settings")
-
-local TraitToggle = TraitTab:CreateToggle({
-    name = "Enable Auto Trait Roll",
-    description = "Automatically roll for target traits",
-    flag = "AutoTraitRoll",
-    callback = function(value)
-        State.AutoTraitRoll = value
-    end,
-})
 
 local TraitSkipToggle = TraitTab:CreateToggle({
     name = "Skip Animation",
-    description = "Skip spin animation (experimental, faster rolling)",
-    flag = "TraitSkipAnimation",
+    description = "Skip spin animation (faster rolling)",
     value = true,
     callback = function(value)
         State.TraitSkipAnimation = value
@@ -310,13 +259,12 @@ local TraitSkipToggle = TraitTab:CreateToggle({
 })
 
 local TraitDelaySlider = TraitTab:CreateSlider({
-    name = "Roll Delay (seconds)",
-    description = "Delay between rolls",
+    name = "Roll Delay",
+    description = "Delay between rolls in seconds",
     range = {1, 10},
     increment = 0.5,
     value = 2,
     suffix = "s",
-    flag = "TraitDelay",
     callback = function(value)
         State.TraitDelay = value
     end,
@@ -327,13 +275,11 @@ local TraitSlotDropdown = TraitTab:CreateDropdown({
     description = "Which trait slot to reroll",
     options = {"1", "2", "3", "4"},
     value = "1",
-    flag = "TraitSlot",
     callback = function(value)
         State.TraitSlot = tonumber(value)
     end,
 })
 
--- Section: Targets
 TraitTab:CreateSection("Target Trait(s)")
 
 local TraitDropdown = TraitTab:CreateDropdown({
@@ -341,7 +287,6 @@ local TraitDropdown = TraitTab:CreateDropdown({
     description = "Select specific traits to stop on",
     multiSelect = true,
     options = Traits,
-    flag = "TargetTraits",
     callback = function(value)
         State.TargetTraits = value
     end,
@@ -352,98 +297,75 @@ local RarityDropdown = TraitTab:CreateDropdown({
     description = "Stop on any trait of these rarities",
     multiSelect = true,
     options = TraitRarities,
-    flag = "TargetRarities",
     callback = function(value)
         State.TargetRarities = value
     end,
 })
 
--- Section: Status
-TraitTab:CreateSection("Status")
+TraitTab:CreateSection("Control")
+
+local TraitToggle = TraitTab:CreateToggle({
+    name = "Enable Auto Trait Roll",
+    description = "Start auto rolling",
+    callback = function(value)
+        State.AutoTraitRoll = value
+    end,
+})
 
 local TraitStatus = TraitTab:CreateConsole({
-    name = "Roll Status",
-    height = 100,
+    name = "Status",
+    height = 80,
     follow = true,
-    maxLines = 50,
+    maxLines = 20,
 })
 
 -- ============================================
--- TAB 3: AUTO REDEEM CODES
+-- TAB 3: AUTO CODES
 -- ============================================
 
 local CodesTab = Window:CreateTab("Auto Codes", 4483362458)
 
--- Section: Settings
-CodesTab:CreateSection("Settings")
+CodesTab:CreateSection("Redeem Codes")
 
-local CodesToggle = CodesTab:CreateToggle({
-    name = "Auto Redeem on Load",
-    description = "Automatically redeem all codes when script loads",
-    flag = "AutoRedeem",
-    callback = function(value)
-        State.AutoRedeem = value
-        if value then
-            -- Redeem all codes
-            task.spawn(function()
-                for _, code in pairs(Codes) do
-                    if not State.RedeemedCodes[code] then
-                        CodesRemote:FireServer(code)
-                        State.RedeemedCodes[code] = true
-                        CodesStatus:Append("Redeemed: " .. code)
-                        task.wait(1)
-                    end
-                end
-                CodesStatus:Append("All codes redeemed!")
-            end)
-        end
-    end,
+local CodesStatus = CodesTab:CreateConsole({
+    name = "Redemption Status",
+    height = 120,
+    follow = true,
+    maxLines = 50,
 })
 
 local RedeemButton = CodesTab:CreateButton({
-    name = "Redeem All Codes Now",
-    description = "Click to redeem all codes",
+    name = "Redeem All Codes",
+    description = "Click to redeem all codes now",
     callback = function()
         task.spawn(function()
+            CodesStatus:Clear()
             CodesStatus:Append("Starting code redemption...")
             for _, code in pairs(Codes) do
-                if not State.RedeemedCodes[code] then
+                pcall(function()
                     CodesRemote:FireServer(code)
-                    State.RedeemedCodes[code] = true
-                    CodesStatus:Append("Redeemed: " .. code)
-                    task.wait(1)
-                else
-                    CodesStatus:Append("Already redeemed: " .. code)
-                end
+                end)
+                CodesStatus:Append("Redeemed: " .. code)
+                task.wait(1.5)
             end
-            CodesStatus:Append("Done!")
+            CodesStatus:Append("All codes redeemed!")
         end)
     end,
 })
 
--- Section: Status
-CodesTab:CreateSection("Status")
-
-local CodesStatus = CodesTab:CreateConsole({
-    name = "Redemption Status",
-    height = 150,
-    follow = true,
-    maxLines = 100,
-})
-
--- Section: Code List
 CodesTab:CreateSection("Available Codes")
 
 CodesTab:CreateConsole({
     name = "Code List",
     text = table.concat(Codes, "\n"),
-    height = 200,
+    height = 180,
 })
 
 -- ============================================
--- MAIN LOOP: AUTO RACE ROLL
+-- AUTO ROLL LOOPS
 -- ============================================
 
+-- Race Auto Roll Loop
 task.spawn(function()
     while true do
         if State.AutoRaceRoll then
@@ -452,40 +374,30 @@ task.spawn(function()
                 local currentRace = GetRace()
                 local currentVariant = GetRaceVariant()
                 
-                -- Check if we already have target
                 if IsTargetRace(currentRace, currentVariant) then
-                    RaceStatus:Append("✅ Target reached: " .. currentRace .. " (" .. (currentVariant or "Normal") .. ")")
+                    RaceStatus:Append("Target reached: " .. (currentRace or "?") .. " " .. (currentVariant or ""))
                     State.AutoRaceRoll = false
-                    RaceToggle:Set(false)
+                    pcall(function() RaceToggle:Set(false) end)
                 else
-                    RaceStatus:Append("Rolling... Current: " .. (currentRace or "None"))
-                    
-                    -- Fire reroll
-                    FireRaceReroll()
+                    RaceStatus:Append("Rolling... " .. (currentRace or "None"))
+                    RerollRemote:FireServer("Race")
                     
                     if State.RaceSkipAnimation then
-                        -- Wait only for server cooldown, not animation
                         task.wait(State.RaceDelay)
-                        
-                        -- Try to apply immediately
-                        FireRaceApply()
+                        RerollRemote:FireServer("RaceApply")
                     else
-                        -- Wait for full animation + buffer
                         task.wait(5 + State.RaceDelay)
                     end
                 end
             else
-                RaceStatus:Append("⚠️ No character found. Please spawn first.")
+                RaceStatus:Append("No character. Spawn first.")
             end
         end
         task.wait(0.5)
     end
 end)
 
--- ============================================
--- MAIN LOOP: AUTO TRAIT ROLL
--- ============================================
-
+-- Trait Auto Roll Loop
 task.spawn(function()
     while true do
         if State.AutoTraitRoll then
@@ -493,44 +405,31 @@ task.spawn(function()
             if char then
                 local currentTraits = GetTraits()
                 
-                -- Check if we already have target
                 if IsTargetTrait(currentTraits) then
-                    TraitStatus:Append("✅ Target trait found!")
+                    TraitStatus:Append("Target trait found!")
                     State.AutoTraitRoll = false
-                    TraitToggle:Set(false)
+                    pcall(function() TraitToggle:Set(false) end)
                 else
-                    TraitStatus:Append("Rolling slot " .. State.TraitSlot .. "...")
-                    
-                    -- Fire reroll
-                    FireTraitReroll(State.TraitSlot)
+                    TraitStatus:Append("Rolling slot " .. State.TraitSlot)
+                    RerollRemote:FireServer("Trait", State.TraitSlot)
                     
                     if State.TraitSkipAnimation then
-                        -- Wait only for server cooldown
                         task.wait(State.TraitDelay)
                     else
-                        -- Wait for full animation
                         task.wait(7 + State.TraitDelay)
                     end
                 end
             else
-                TraitStatus:Append("⚠️ No character found. Please spawn first.")
+                TraitStatus:Append("No character. Spawn first.")
             end
         end
         task.wait(0.5)
     end
 end)
 
--- ============================================
--- INITIALIZE
--- ============================================
-
-Rayfield:LoadConfiguration()
-
--- Welcome message
-task.spawn(function()
-    task.wait(2)
-    CodesStatus:Append("Grand Blue Hub loaded!")
-    CodesStatus:Append("Codes available: " .. #Codes)
-    RaceStatus:Append("Ready to roll!")
-    TraitStatus:Append("Ready to roll!")
+-- Load saved config
+pcall(function()
+    Rayfield:LoadConfiguration()
 end)
+
+print("[GrandBlueHub] Loaded successfully!")
