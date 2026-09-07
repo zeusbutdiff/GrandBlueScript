@@ -120,21 +120,6 @@ local function GetTraits()
     return {}
 end
 
-local function GetAvailableVariants()
-    local allVariants = {}
-    for _, race in pairs(State.TargetRaces) do
-        local variants = RaceVariantMap[race]
-        if variants then
-            for _, v in pairs(variants) do
-                if not table.find(allVariants, v) then
-                    table.insert(allVariants, v)
-                end
-            end
-        end
-    end
-    return allVariants
-end
-
 local function IsTargetRace(race, variant)
     if #State.TargetRaces == 0 and #State.TargetVariants == 0 then return false end
     local raceMatch = #State.TargetRaces == 0
@@ -170,7 +155,7 @@ local RaceTab = Window:CreateTab({ name = "Auto Race Roll" })
 
 RaceTab:CreateText({
     name = "Race Roll Settings",
-    text = "Select target races first. Variants update based on your race selection.",
+    text = "Half Fish = Seafolk, Celestial = Skyfolk, Cat/Bunny = Beastfolk, Long Legged/Long Armed = Dwarf. Human has no variants.",
 })
 
 RaceTab:CreateToggle({
@@ -199,23 +184,14 @@ RaceTab:CreateDropdown({
     options = Races,
     callback = function(value)
         State.TargetRaces = value
-        State.TargetVariants = {}
-        local availableVariants = GetAvailableVariants()
-        if VariantDropdown then
-            if #availableVariants > 0 then
-                VariantDropdown:Refresh(availableVariants)
-            else
-                VariantDropdown:Refresh({})
-            end
-        end
     end,
 })
 
-local VariantDropdown = RaceTab:CreateDropdown({
+RaceTab:CreateDropdown({
     name = "Target Variants",
-    description = "Select variants to stop on (updates based on race selection)",
+    description = "Half Fish=Seafolk, Celestial=Skyfolk, Cat/Bunny=Beastfolk, Long=",
     multiSelect = true,
-    options = {},
+    options = {"Half Fish", "Celestial", "Cat", "Bunny", "Long Legged", "Long Armed"},
     callback = function(value) State.TargetVariants = value end,
 })
 
